@@ -1,0 +1,10 @@
+# DTN2 Routing Configuration for Node B (Relay)
+# Node identity: dtn://g0bbb-1/
+
+## Add routing plans
+
+# Plan to reach Node A (Source) - direct connection
+a plan dtn://g0aaa-1/* udp/192.168.25.10:4556
+
+# Plan to reach Node C (Destination) - direct connection
+a plan dtn://g0ccc-1/* udp/192.168.25.30:4556

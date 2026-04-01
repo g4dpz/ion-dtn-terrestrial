@@ -1,0 +1,15 @@
+# LTP Configuration for Node C (Destination)
+# Node identity: dtn://g4dpz-3/
+# LTP Engine ID: 3
+# Serial Device: /dev/ttyUSB0 (or /dev/ttyACM0 for Mobilinkd TNC3)
+
+## Initialize LTP engine
+3 32
+s
+
+## Configure LTP span to Node B
+# seriallso: LTP over AX.25/KISS serial with callsign ID
+a span 2 32 32 1400 10000 1 'seriallso /dev/ttyUSB0:9600 G4DPZ-3 G4DPZ-2'
+
+# Start LTP
+s

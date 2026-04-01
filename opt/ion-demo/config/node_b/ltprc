@@ -1,0 +1,5 @@
+# LTP Node B - Engine ID 2
+# udplso sends to seriallso bridge on localhost:1114
+1 128
+a span 1 128 128 1400 10000 1 'udplso localhost:1114 1'
+s 'udplsi 0.0.0.0:1113'

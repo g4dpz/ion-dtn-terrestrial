@@ -1,0 +1,15 @@
+# ION Configuration for Node A (Source)
+# Node identity: dtn://g4dpz-1/
+# Callsign: G4DPZ-1
+
+# Shared memory key (unique per ION instance on same host)
+wmKey 1
+
+# Shared memory size (bytes) - 5MB for demonstration
+wmSize 5000000
+
+# Configuration flags
+configFlags 1
+
+# ION data path for persistent storage
+pathName /tmp/ion_node_a

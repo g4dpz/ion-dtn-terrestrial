@@ -1,0 +1,8 @@
+# ION Node A (ipn:1) - Source
+1 1 ''
+s
+a contact +1 +3600 1 2 100000
+a contact +1 +3600 2 1 100000
+a range +1 +3600 1 2 1
+m production 1000000
+m consumption 1000000

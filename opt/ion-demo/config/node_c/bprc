@@ -1,0 +1,26 @@
+# Bundle Protocol Configuration for Node C (Destination)
+# Node identity: dtn://g4dpz-3/
+# Callsign: G4DPZ-3
+# LTP Engine ID: 3
+
+## Initialize bundle protocol
+1
+
+# Add DTN scheme
+a scheme dtn 'dtn2fw' 'dtn2adminep'
+
+# Add endpoints for this node
+a endpoint dtn://g4dpz-3/admin q
+a endpoint dtn://g4dpz-3/demo q
+
+# Add LTP convergence layer protocol
+a protocol ltp 1400 100
+
+# Add induct (receiving) - LTP engine 3
+a induct ltp 3 ltpcli
+
+# Add outduct (sending) to Node B (LTP engine 2)
+a outduct ltp 2 ltpclo
+
+# Start bundle protocol
+s

@@ -1,0 +1,15 @@
+# ION Configuration for Node C (Destination)
+# Node identity: dtn://g4dpz-3/
+# Callsign: G4DPZ-3
+
+# Shared memory key (must be unique if running multiple ION instances)
+wmKey 0
+
+# Shared memory size (bytes) - 5MB for demonstration
+wmSize 5000000
+
+# Configuration flags
+configFlags 1
+
+# ION data path for persistent storage
+pathName /opt/ion-demo/data/bundles

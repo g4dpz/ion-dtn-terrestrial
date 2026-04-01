@@ -1,0 +1,39 @@
+# ION-DTN symlink (external dependency)
+ION-DTN
+
+# Compiled binaries
+opt/tnc3-ax25-test/c/aprs_sender
+opt/tnc3-ax25-test/c/aprs_receiver
+opt/tnc3-ax25-test/c/ax25_ltp_sender
+opt/tnc3-ax25-test/c/ax25_ltp_receiver
+opt/tnc3-ax25-test/c/ax25_ltp_bp_sender
+opt/tnc3-ax25-test/c/ax25_ltp_bp_receiver
+opt/ion-demo/cla/seriallso
+opt/ion-demo/cla/seriallsi
+opt/ion-demo/cla/test_lso_feed
+opt/ion-demo/cla/test_lsi_recv
+*.o
+*.dSYM/
+
+# ION runtime data
+/tmp/ion_node_*
+ion.log
+*.sdrlog
+
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# macOS
+.DS_Store
+._*
+
+# Logs
+opt/ion-demo/logs/
+
+# Editor
+*.swp
+*.swo
+*~
+.vscode/
