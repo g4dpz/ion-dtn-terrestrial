@@ -113,7 +113,7 @@ static int kiss_send(int fd, const uint8_t *data, size_t len) {
     frame[idx++]=FEND;
     size_t w=0;
     while(w<idx){ssize_t n=write(fd,frame+w,idx-w);if(n<0){if(errno==EINTR)continue;return -1;}w+=n;}
-    tcdrain(fd); return (int)idx;
+    return (int)idx;
 }
 typedef struct { uint8_t buf[MAX_AX25]; size_t len; int in_frame, escape; } kiss_dec_t;
 static void kiss_dec_init(kiss_dec_t *d){d->len=0;d->in_frame=0;d->escape=0;}
