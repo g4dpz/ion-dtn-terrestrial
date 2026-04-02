@@ -13,7 +13,7 @@ seriallsi: seriallsi.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 serialcla: serialcla.c
-	$(CC) $(CFLAGS) -o $@ $<
+	$(CC) $(CFLAGS) -o $@ $< -lpthread
 
 test_lso_feed: test_lso_feed.c
 	$(CC) $(CFLAGS) -o $@ $<

@@ -1,20 +1,15 @@
 /*
- * serialcla.c - Combined serial AX.25/KISS CLA for ION-DTN LTP
+ * serialcla.c - Threaded serial AX.25/KISS CLA for ION-DTN LTP
  *
- * Single process handling both TX and RX on one serial device.
- * Required for half-duplex radio where both seriallso and seriallsi
- * need to share the same serial port.
+ * Single process, three threads:
+ *   - RX thread: reads KISS frames from serial, strips AX.25, queues LTP
+ *   - TX thread: dequeues LTP segments, wraps in AX.25/KISS, writes serial
+ *   - Main: reads UDP from ION (udplso), queues for TX thread;
+ *           dequeues from RX thread, forwards UDP to ION (udplsi)
  *
- * TX: Receives LTP segments via UDP from udplso, wraps in AX.25/KISS,
- *     writes to serial device.
- * RX: Reads KISS frames from serial device, strips AX.25, forwards
- *     LTP segments via UDP to udplsi.
+ * Propagation delay is applied in the TX/RX threads without blocking I/O.
  *
- * Usage: serialcla <device>:<baud> <src_call> <dest_call> <tx_port> <rx_port> [burst:pause]
- * Example: serialcla /dev/ttyACM0:9600 G4DPZ-1 G4DPZ-2 1114 1113 2:30
- *
- *   tx_port: UDP port to listen on (receives from udplso)
- *   rx_port: UDP port to forward to (sends to udplsi)
+ * Usage: serialcla <dev>:<baud> <src> <dst> <tx_port> <rx_port> [delay_ms]
  */
 
 #include <stdio.h>
@@ -28,6 +23,7 @@
 #include <stdint.h>
 #include <ctype.h>
 #include <time.h>
+#include <pthread.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -42,23 +38,78 @@
 #define AX25_HDR     16
 #define MAX_AX25     (AX25_HDR + MAX_SEGMENT)
 #define MAX_KISS     (MAX_AX25 * 2 + 4)
-#define SERIAL_BUF   4096
+#define QUEUE_SIZE   256
 
 static volatile int running = 1;
 static void handle_signal(int sig) { (void)sig; running = 0; }
 
-/* AX.25 encode/decode */
+/* ── Thread-safe queue ── */
+typedef struct {
+    uint8_t data[MAX_SEGMENT];
+    size_t  len;
+} qitem_t;
+
+typedef struct {
+    qitem_t       items[QUEUE_SIZE];
+    int           head, tail, count;
+    pthread_mutex_t lock;
+    pthread_cond_t  not_empty;
+} queue_t;
+
+static void queue_init(queue_t *q) {
+    q->head = q->tail = q->count = 0;
+    pthread_mutex_init(&q->lock, NULL);
+    pthread_cond_init(&q->not_empty, NULL);
+}
+
+static int queue_push(queue_t *q, const uint8_t *data, size_t len) {
+    pthread_mutex_lock(&q->lock);
+    if (q->count >= QUEUE_SIZE) { pthread_mutex_unlock(&q->lock); return -1; }
+    memcpy(q->items[q->tail].data, data, len);
+    q->items[q->tail].len = len;
+    q->tail = (q->tail + 1) % QUEUE_SIZE;
+    q->count++;
+    pthread_cond_signal(&q->not_empty);
+    pthread_mutex_unlock(&q->lock);
+    return 0;
+}
+
+static int queue_pop(queue_t *q, uint8_t *data, size_t *len, int timeout_ms) {
+    pthread_mutex_lock(&q->lock);
+    while (q->count == 0 && running) {
+        if (timeout_ms > 0) {
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_nsec += (long)timeout_ms * 1000000L;
+            ts.tv_sec += ts.tv_nsec / 1000000000L;
+            ts.tv_nsec %= 1000000000L;
+            pthread_cond_timedwait(&q->not_empty, &q->lock, &ts);
+            break;
+        } else {
+            pthread_cond_wait(&q->not_empty, &q->lock);
+        }
+    }
+    if (q->count == 0) { pthread_mutex_unlock(&q->lock); return -1; }
+    *len = q->items[q->head].len;
+    memcpy(data, q->items[q->head].data, *len);
+    q->head = (q->head + 1) % QUEUE_SIZE;
+    q->count--;
+    pthread_mutex_unlock(&q->lock);
+    return 0;
+}
+
+/* ── AX.25 ── */
 static void encode_ax25_addr(const char *call, uint8_t *out, int last) {
     char c[7] = "      "; uint8_t ssid = 0;
     const char *d = strchr(call, '-');
-    if (d) { size_t l = d-call; if(l>6)l=6; memcpy(c,call,l); ssid=atoi(d+1)&0xF; }
+    if (d) { size_t l=d-call; if(l>6)l=6; memcpy(c,call,l); ssid=atoi(d+1)&0xF; }
     else { size_t l=strlen(call); if(l>6)l=6; memcpy(c,call,l); }
-    for(int i=0;i<6;i++) out[i]=(uint8_t)(toupper(c[i]))<<1;
+    for (int i=0;i<6;i++) out[i]=(uint8_t)(toupper(c[i]))<<1;
     out[6]=0x60|((ssid&0xF)<<1)|(last?1:0);
 }
 
 static int build_ax25(const char *dst, const char *src, const uint8_t *p, size_t pl, uint8_t *o, size_t os) {
-    if(AX25_HDR+pl>os) return -1;
+    if (AX25_HDR+pl>os) return -1;
     size_t i=0;
     encode_ax25_addr(dst,o+i,0); i+=7;
     encode_ax25_addr(src,o+i,1); i+=7;
@@ -78,11 +129,10 @@ static int strip_ax25(const uint8_t *f, size_t fl, const uint8_t **p, char *src,
     if(fl<AX25_HDR) return -1;
     decode_ax25_addr(f,dst); decode_ax25_addr(f+7,src);
     if(f[14]!=0x03||f[15]!=0xF0) return -1;
-    *p=f+AX25_HDR;
-    return (int)(fl-AX25_HDR);
+    *p=f+AX25_HDR; return (int)(fl-AX25_HDR);
 }
 
-/* Serial port */
+/* ── Serial ── */
 static speed_t baud_speed(int b) {
     switch(b){case 1200:return B1200;case 2400:return B2400;case 4800:return B4800;
     case 9600:return B9600;case 19200:return B19200;case 38400:return B38400;
@@ -104,7 +154,6 @@ static int open_serial(const char *dev, int baud) {
     tcflush(fd,TCIOFLUSH); return fd;
 }
 
-/* KISS encode + send */
 static int kiss_send(int fd, const uint8_t *data, size_t len) {
     uint8_t frame[MAX_KISS]; size_t idx=0;
     frame[idx++]=FEND; frame[idx++]=0x00;
@@ -125,13 +174,11 @@ static int kiss_send(int fd, const uint8_t *data, size_t len) {
 typedef struct { uint8_t buf[MAX_AX25]; size_t len; int in_frame, escape; } kiss_dec_t;
 static void kiss_dec_init(kiss_dec_t *d){d->len=0;d->in_frame=0;d->escape=0;}
 
-/* Returns 1 if a complete frame was decoded into out/out_len */
 static int kiss_dec_byte(kiss_dec_t *d, uint8_t byte, uint8_t *out, size_t *out_len) {
     if(byte==FEND){
         if(d->in_frame && d->len>1 && (d->buf[0]&0x0F)==0){
             memcpy(out,d->buf+1,d->len-1); *out_len=d->len-1;
-            d->len=0; d->in_frame=1; d->escape=0;
-            return 1;
+            d->len=0; d->in_frame=1; d->escape=0; return 1;
         }
         d->len=0; d->in_frame=1; d->escape=0; return 0;
     }
@@ -149,109 +196,142 @@ static int parse_device(const char *arg, char *dev, size_t ds, int *baud) {
     *baud=atoi(c+1); if(*baud<=0)*baud=9600; return 0;
 }
 
+/* ── Thread contexts ── */
+typedef struct {
+    int serial_fd;
+    queue_t *tx_queue;      /* segments to transmit */
+    const char *src_call;
+    const char *dest_call;
+    int delay_ms;
+} tx_ctx_t;
+
+typedef struct {
+    int serial_fd;
+    queue_t *rx_queue;      /* decoded LTP segments to forward */
+    int delay_ms;
+} rx_ctx_t;
+
+/* TX thread: dequeue segments, apply delay, AX.25/KISS encode, write serial */
+static void *tx_thread(void *arg) {
+    tx_ctx_t *ctx = (tx_ctx_t *)arg;
+    uint8_t seg[MAX_SEGMENT], ax[MAX_AX25];
+    size_t len;
+    uint64_t count = 0;
+
+    while (running) {
+        if (queue_pop(ctx->tx_queue, seg, &len, 500) < 0) continue;
+        if (ctx->delay_ms > 0) usleep(ctx->delay_ms * 1000);
+        int al = build_ax25(ctx->dest_call, ctx->src_call, seg, len, ax, sizeof(ax));
+        if (al > 0) {
+            int kl = kiss_send(ctx->serial_fd, ax, al);
+            if (kl > 0) {
+                count++;
+                fprintf(stderr, "serialcla: TX #%llu LTP(%zu)->AX25(%d)->KISS(%d)\n",
+                        (unsigned long long)count, len, al, kl);
+            }
+        }
+    }
+    return NULL;
+}
+
+/* RX thread: read serial, KISS decode, strip AX.25, queue LTP segments */
+static void *rx_thread(void *arg) {
+    rx_ctx_t *ctx = (rx_ctx_t *)arg;
+    kiss_dec_t dec; kiss_dec_init(&dec);
+    uint8_t rbuf[4096];
+
+    while (running) {
+        ssize_t n = read(ctx->serial_fd, rbuf, sizeof(rbuf));
+        if (n < 0) { if (errno == EINTR) continue; break; }
+        if (n == 0) continue;
+        for (ssize_t i = 0; i < n; i++) {
+            uint8_t frame[MAX_AX25]; size_t flen;
+            if (kiss_dec_byte(&dec, rbuf[i], frame, &flen)) {
+                char sc[16], dc[16]; const uint8_t *payload;
+                int plen = strip_ax25(frame, flen, &payload, sc, dc);
+                if (plen > 0) {
+                    if (ctx->delay_ms > 0) usleep(ctx->delay_ms * 1000);
+                    queue_push(ctx->rx_queue, payload, plen);
+                    fprintf(stderr, "serialcla: RX from %s (%d bytes)\n", sc, plen);
+                }
+            }
+        }
+    }
+    return NULL;
+}
+
 int main(int argc, char *argv[]) {
-    if(argc<6){
-        fprintf(stderr,"Usage: serialcla <dev>:<baud> <src> <dst> <tx_port> <rx_port> [delay_ms]\n");
-        fprintf(stderr,"  delay_ms: simulated propagation delay in milliseconds (default: 0)\n");
-        fprintf(stderr,"  Example: serialcla /dev/ttyACM0:9600 G4DPZ-1 G4DPZ-2 1114 1113 1300\n");
+    if (argc < 6) {
+        fprintf(stderr, "Usage: serialcla <dev>:<baud> <src> <dst> <tx_port> <rx_port> [delay_ms]\n");
+        fprintf(stderr, "  delay_ms: simulated OWLT in ms (default: 0)\n");
         return 1;
     }
     char device[256]; int baud;
-    parse_device(argv[1],device,sizeof(device),&baud);
-    const char *src_call=argv[2], *dest_call=argv[3];
-    int tx_port=atoi(argv[4]), rx_port=atoi(argv[5]);
+    parse_device(argv[1], device, sizeof(device), &baud);
+    const char *src_call = argv[2], *dest_call = argv[3];
+    int tx_port = atoi(argv[4]), rx_port = atoi(argv[5]);
     int delay_ms = (argc > 6) ? atoi(argv[6]) : 0;
 
-    fprintf(stderr,"serialcla: dev=%s baud=%d src=%s dst=%s tx_port=%d rx_port=%d",
-            device,baud,src_call,dest_call,tx_port,rx_port);
-    if(delay_ms > 0) fprintf(stderr," delay=%dms (simulated OWLT)",delay_ms);
-    fprintf(stderr,"\n");
+    fprintf(stderr, "serialcla: dev=%s baud=%d src=%s dst=%s tx=%d rx=%d",
+            device, baud, src_call, dest_call, tx_port, rx_port);
+    if (delay_ms > 0) fprintf(stderr, " delay=%dms", delay_ms);
+    fprintf(stderr, "\n");
 
-    signal(SIGINT,handle_signal); signal(SIGTERM,handle_signal); signal(SIGPIPE,SIG_IGN);
+    signal(SIGINT, handle_signal); signal(SIGTERM, handle_signal); signal(SIGPIPE, SIG_IGN);
 
-    int serial_fd=open_serial(device,baud);
-    if(serial_fd<0) return 1;
+    int serial_fd = open_serial(device, baud);
+    if (serial_fd < 0) return 1;
 
-    /* TX: UDP listen socket (receives from udplso) */
-    int tx_sock=socket(AF_INET,SOCK_DGRAM,0);
-    int reuse=1; setsockopt(tx_sock,SOL_SOCKET,SO_REUSEADDR,&reuse,sizeof(reuse));
+    /* UDP sockets */
+    int tx_sock = socket(AF_INET, SOCK_DGRAM, 0);
+    int reuse = 1;
+    setsockopt(tx_sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
 #ifdef SO_REUSEPORT
-    setsockopt(tx_sock,SOL_SOCKET,SO_REUSEPORT,&reuse,sizeof(reuse));
+    setsockopt(tx_sock, SOL_SOCKET, SO_REUSEPORT, &reuse, sizeof(reuse));
 #endif
-    struct sockaddr_in tx_addr; memset(&tx_addr,0,sizeof(tx_addr));
-    tx_addr.sin_family=AF_INET; tx_addr.sin_port=htons(tx_port); tx_addr.sin_addr.s_addr=htonl(INADDR_ANY);
-    if(bind(tx_sock,(struct sockaddr*)&tx_addr,sizeof(tx_addr))<0){perror("bind tx");return 1;}
+    struct sockaddr_in ta = {0}; ta.sin_family=AF_INET; ta.sin_port=htons(tx_port); ta.sin_addr.s_addr=htonl(INADDR_ANY);
+    if (bind(tx_sock, (struct sockaddr*)&ta, sizeof(ta)) < 0) { perror("bind tx"); return 1; }
 
-    /* RX: UDP send socket (forwards to udplsi) */
-    int rx_sock=socket(AF_INET,SOCK_DGRAM,0);
-    struct sockaddr_in rx_dest; memset(&rx_dest,0,sizeof(rx_dest));
-    rx_dest.sin_family=AF_INET; rx_dest.sin_port=htons(rx_port); rx_dest.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
+    int rx_sock = socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in rd = {0}; rd.sin_family=AF_INET; rd.sin_port=htons(rx_port); rd.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
 
-    fprintf(stderr,"serialcla: running (TX: UDP:%d→serial, RX: serial→UDP:%d)\n",tx_port,rx_port);
+    /* Queues */
+    queue_t tx_q, rx_q;
+    queue_init(&tx_q); queue_init(&rx_q);
 
-    kiss_dec_t dec; kiss_dec_init(&dec);
-    uint64_t tx_count=0, rx_count=0;
+    /* Start threads */
+    tx_ctx_t tc = { serial_fd, &tx_q, src_call, dest_call, delay_ms };
+    rx_ctx_t rc = { serial_fd, &rx_q, delay_ms };
+    pthread_t tx_tid, rx_tid;
+    pthread_create(&tx_tid, NULL, tx_thread, &tc);
+    pthread_create(&rx_tid, NULL, rx_thread, &rc);
 
-    while(running) {
-        fd_set rfds; FD_ZERO(&rfds);
-        FD_SET(serial_fd,&rfds);
-        FD_SET(tx_sock,&rfds);
-        int maxfd=(serial_fd>tx_sock?serial_fd:tx_sock)+1;
-        struct timeval tv={1,0};
+    fprintf(stderr, "serialcla: running (threaded)\n");
 
-        int ret=select(maxfd,&rfds,NULL,NULL,&tv);
-        if(ret<0){if(errno==EINTR)continue;break;}
+    /* Main loop: UDP↔queues */
+    while (running) {
+        fd_set rfds; FD_ZERO(&rfds); FD_SET(tx_sock, &rfds);
+        struct timeval tv = {0, 100000}; /* 100ms */
+        select(tx_sock + 1, &rfds, NULL, NULL, &tv);
 
-        /* RX: serial → UDP (always process incoming RF data) */
-        if(FD_ISSET(serial_fd,&rfds)){
-            uint8_t rbuf[SERIAL_BUF];
-            ssize_t n=read(serial_fd,rbuf,sizeof(rbuf));
-            if(n>0){
-                for(ssize_t i=0;i<n;i++){
-                    uint8_t frame[MAX_AX25]; size_t flen;
-                    if(kiss_dec_byte(&dec,rbuf[i],frame,&flen)){
-                        char sc[16],dc[16]; const uint8_t *payload;
-                        int plen=strip_ax25(frame,flen,&payload,sc,dc);
-                        if(plen>0){
-                            if(delay_ms > 0) {
-                                fprintf(stderr,"serialcla: RX delay %dms (simulated OWLT)\n",delay_ms);
-                                usleep(delay_ms * 1000);
-                            }
-                            sendto(rx_sock,payload,plen,0,(struct sockaddr*)&rx_dest,sizeof(rx_dest));
-                            rx_count++;
-                            fprintf(stderr,"serialcla: RX #%llu from %s (%d bytes)\n",
-                                    (unsigned long long)rx_count,sc,plen);
-                        }
-                    }
-                }
-            }
+        /* UDP → TX queue */
+        if (FD_ISSET(tx_sock, &rfds)) {
+            uint8_t seg[MAX_SEGMENT];
+            struct sockaddr_in from; socklen_t fl = sizeof(from);
+            ssize_t n = recvfrom(tx_sock, seg, sizeof(seg), 0, (struct sockaddr*)&from, &fl);
+            if (n > 0) queue_push(&tx_q, seg, n);
         }
 
-        /* TX: UDP → serial (send outgoing LTP segments) */
-        if(FD_ISSET(tx_sock,&rfds)){
-            uint8_t seg[MAX_SEGMENT]; uint8_t ax[MAX_AX25];
-            struct sockaddr_in from; socklen_t fl=sizeof(from);
-            ssize_t n=recvfrom(tx_sock,seg,sizeof(seg),0,(struct sockaddr*)&from,&fl);
-            if(n>0){
-                int al=build_ax25(dest_call,src_call,seg,n,ax,sizeof(ax));
-                if(al>0){
-                    if(delay_ms > 0) {
-                        fprintf(stderr,"serialcla: TX delay %dms (simulated OWLT)\n",delay_ms);
-                        usleep(delay_ms * 1000);
-                    }
-                    int kl=kiss_send(serial_fd,ax,al);
-                    if(kl>0){
-                        tx_count++;
-                        fprintf(stderr,"serialcla: TX #%llu LTP(%zd)->AX25(%d)->KISS(%d)\n",
-                                (unsigned long long)tx_count,n,al,kl);
-                    }
-                }
-            }
+        /* RX queue → UDP */
+        uint8_t seg[MAX_SEGMENT]; size_t len;
+        while (queue_pop(&rx_q, seg, &len, 0) == 0) {
+            sendto(rx_sock, seg, len, 0, (struct sockaddr*)&rd, sizeof(rd));
         }
     }
 
+    pthread_join(tx_tid, NULL);
+    pthread_join(rx_tid, NULL);
     close(tx_sock); close(rx_sock); close(serial_fd);
-    fprintf(stderr,"serialcla: exiting, TX=%llu RX=%llu\n",
-            (unsigned long long)tx_count,(unsigned long long)rx_count);
+    fprintf(stderr, "serialcla: exiting\n");
     return 0;
 }
