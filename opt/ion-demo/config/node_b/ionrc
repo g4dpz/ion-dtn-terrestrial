@@ -1,9 +1,8 @@
 # ION Node B (ipn:2) - Destination/Relay
 1 2 ''
 s
-a contact +1 +3600 2 1 100000
-a contact +1 +3600 1 2 100000
-# Earth-Moon OWLT: simulated 1.3s delay + RF time ≈ 10s effective
-a range +1 +3600 2 1 10
+a contact +1 +7200 2 1 150
+a contact +1 +7200 1 2 150
+a range +1 +7200 2 1 15
 m production 1000000
 m consumption 1000000
