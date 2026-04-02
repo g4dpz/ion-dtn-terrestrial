@@ -185,8 +185,10 @@ int main(int argc, char *argv[]) {
     struct sockaddr_in rd={0}; rd.sin_family=AF_INET; rd.sin_port=htons(rx_port); rd.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
 
     /* Delay queues */
-    delay_item_t tx_dq[DELAY_QUEUE] = {{0}};
-    delay_item_t rx_dq[DELAY_QUEUE] = {{0}};
+    delay_item_t tx_dq[DELAY_QUEUE];
+    delay_item_t rx_dq[DELAY_QUEUE];
+    memset(tx_dq, 0, sizeof(tx_dq));
+    memset(rx_dq, 0, sizeof(rx_dq));
 
     kiss_dec_t dec; kiss_dec_init(&dec);
     uint64_t tx_count=0, rx_count=0;
