@@ -40,7 +40,7 @@ sleep 1
 # Start CLA bridges
 # Start combined CLA (single process for TX+RX on same serial device)
 echo "Starting serialcla (TX: UDP:1114→serial, RX: serial→UDP:1113)..."
-"$CLA_DIR/serialcla" "$DEVICE:9600" G4DPZ-1 G4DPZ-2 1114 1113 &
+"$CLA_DIR/serialcla" "$DEVICE:9600" G4DPZ-1 G4DPZ-2 1114 1113 1300 &
 sleep 1
 
 # Start ION

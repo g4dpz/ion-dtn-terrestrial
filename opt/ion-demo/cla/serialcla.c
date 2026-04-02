@@ -151,18 +151,21 @@ static int parse_device(const char *arg, char *dev, size_t ds, int *baud) {
 
 int main(int argc, char *argv[]) {
     if(argc<6){
-        fprintf(stderr,"Usage: serialcla <dev>:<baud> <src> <dst> <tx_port> <rx_port> [burst:pause]\n");
+        fprintf(stderr,"Usage: serialcla <dev>:<baud> <src> <dst> <tx_port> <rx_port> [delay_ms]\n");
+        fprintf(stderr,"  delay_ms: simulated propagation delay in milliseconds (default: 0)\n");
+        fprintf(stderr,"  Example: serialcla /dev/ttyACM0:9600 G4DPZ-1 G4DPZ-2 1114 1113 1300\n");
         return 1;
     }
     char device[256]; int baud;
     parse_device(argv[1],device,sizeof(device),&baud);
     const char *src_call=argv[2], *dest_call=argv[3];
     int tx_port=atoi(argv[4]), rx_port=atoi(argv[5]);
-    int burst=0, pause_sec=0;
-    (void)burst; (void)pause_sec; /* pacing removed — ION contact plan handles rate */
+    int delay_ms = (argc > 6) ? atoi(argv[6]) : 0;
 
-    fprintf(stderr,"serialcla: dev=%s baud=%d src=%s dst=%s tx_port=%d rx_port=%d\n",
+    fprintf(stderr,"serialcla: dev=%s baud=%d src=%s dst=%s tx_port=%d rx_port=%d",
             device,baud,src_call,dest_call,tx_port,rx_port);
+    if(delay_ms > 0) fprintf(stderr," delay=%dms (simulated OWLT)",delay_ms);
+    fprintf(stderr,"\n");
 
     signal(SIGINT,handle_signal); signal(SIGTERM,handle_signal); signal(SIGPIPE,SIG_IGN);
 
@@ -210,6 +213,10 @@ int main(int argc, char *argv[]) {
                         char sc[16],dc[16]; const uint8_t *payload;
                         int plen=strip_ax25(frame,flen,&payload,sc,dc);
                         if(plen>0){
+                            if(delay_ms > 0) {
+                                fprintf(stderr,"serialcla: RX delay %dms (simulated OWLT)\n",delay_ms);
+                                usleep(delay_ms * 1000);
+                            }
                             sendto(rx_sock,payload,plen,0,(struct sockaddr*)&rx_dest,sizeof(rx_dest));
                             rx_count++;
                             fprintf(stderr,"serialcla: RX #%llu from %s (%d bytes)\n",
@@ -228,6 +235,10 @@ int main(int argc, char *argv[]) {
             if(n>0){
                 int al=build_ax25(dest_call,src_call,seg,n,ax,sizeof(ax));
                 if(al>0){
+                    if(delay_ms > 0) {
+                        fprintf(stderr,"serialcla: TX delay %dms (simulated OWLT)\n",delay_ms);
+                        usleep(delay_ms * 1000);
+                    }
                     int kl=kiss_send(serial_fd,ax,al);
                     if(kl>0){
                         tx_count++;
