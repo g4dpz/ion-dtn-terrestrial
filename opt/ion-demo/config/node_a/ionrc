@@ -1,9 +1,9 @@
 # ION Node A (ipn:1) - Source
 1 1 ''
 s
-# 1200 baud link
-a contact +1 +3600 1 2 1200
-a contact +1 +3600 2 1 1200
+# High data rate — ION handles pacing via LTP
+a contact +1 +3600 1 2 100000
+a contact +1 +3600 2 1 100000
 # Earth-Moon OWLT: 1.3 seconds (range = 2 to give margin)
 a range +1 +3600 1 2 2
 m production 1000000
