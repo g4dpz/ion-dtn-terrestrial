@@ -29,16 +29,15 @@ echo "════════════════════════�
 # Clean
 rm -rf "$DATA"
 mkdir -p "$DATA"
-killall seriallso seriallsi 2>/dev/null || true
+killall serialcla 2>/dev/null || true
 lsof -ti udp:1114 2>/dev/null | xargs kill -9 2>/dev/null || true
 lsof -ti udp:1113 2>/dev/null | xargs kill -9 2>/dev/null || true
 sleep 0.5
 
 # Start CLA bridges
-echo "Starting seriallso (UDP:1114 → serial → RF)..."
-"$CLA_DIR/seriallso" 1114 "$DEVICE:9600" G4DPZ-1 G4DPZ-2 0 2:30 &
-echo "Starting seriallsi (RF → serial → UDP:1113)..."
-"$CLA_DIR/seriallsi" "$DEVICE:9600" 1113 &
+# Start combined CLA (single process for TX+RX on same serial device)
+echo "Starting serialcla (TX: UDP:1114→serial, RX: serial→UDP:1113)..."
+"$CLA_DIR/serialcla" "$DEVICE:9600" G4DPZ-1 G4DPZ-2 1114 1113 2:30 &
 sleep 1
 
 # Start ION

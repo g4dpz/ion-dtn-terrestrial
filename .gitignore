@@ -10,6 +10,7 @@ opt/tnc3-ax25-test/c/ax25_ltp_bp_sender
 opt/tnc3-ax25-test/c/ax25_ltp_bp_receiver
 opt/ion-demo/cla/seriallso
 opt/ion-demo/cla/seriallsi
+opt/ion-demo/cla/serialcla
 opt/ion-demo/cla/test_lso_feed
 opt/ion-demo/cla/test_lsi_recv
 *.o
