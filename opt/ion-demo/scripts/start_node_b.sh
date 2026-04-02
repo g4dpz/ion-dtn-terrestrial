@@ -26,18 +26,21 @@ echo "  Starting ION Node B (ipn:2) - G4DPZ-2"
 echo "  Device: $DEVICE"
 echo "════════════════════════════════════════════════════"
 
-# Clean
+# Hard clean all ION state
+ionstop 2>/dev/null || true
+killm 2>/dev/null || true
 rm -rf "$DATA"
+rm -f /tmp/ion.sdrlog /tmp/ion.sdrxnlog /tmp/*.ionlock /tmp/ion.*.sdrlog
 mkdir -p "$DATA"
 killall serialcla 2>/dev/null || true
 lsof -ti udp:1114 2>/dev/null | xargs kill -9 2>/dev/null || true
 lsof -ti udp:1113 2>/dev/null | xargs kill -9 2>/dev/null || true
-sleep 0.5
+sleep 1
 
 # Start CLA bridges
 # Start combined CLA (single process for TX+RX on same serial device)
 echo "Starting serialcla (TX: UDP:1114→serial, RX: serial→UDP:1113)..."
-"$CLA_DIR/serialcla" "$DEVICE:9600" G4DPZ-2 G4DPZ-1 1114 1113 2:30 &
+"$CLA_DIR/serialcla" "$DEVICE:9600" G4DPZ-2 G4DPZ-1 1114 1113 &
 sleep 1
 
 # Start ION

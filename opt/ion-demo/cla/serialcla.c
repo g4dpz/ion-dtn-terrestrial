@@ -159,12 +159,10 @@ int main(int argc, char *argv[]) {
     const char *src_call=argv[2], *dest_call=argv[3];
     int tx_port=atoi(argv[4]), rx_port=atoi(argv[5]);
     int burst=0, pause_sec=0;
-    if(argc>6) sscanf(argv[6],"%d:%d",&burst,&pause_sec);
+    (void)burst; (void)pause_sec; /* pacing removed — ION contact plan handles rate */
 
-    fprintf(stderr,"serialcla: dev=%s baud=%d src=%s dst=%s tx_port=%d rx_port=%d",
+    fprintf(stderr,"serialcla: dev=%s baud=%d src=%s dst=%s tx_port=%d rx_port=%d\n",
             device,baud,src_call,dest_call,tx_port,rx_port);
-    if(burst>0) fprintf(stderr," pacing=%d:%d",burst,pause_sec);
-    fprintf(stderr,"\n");
 
     signal(SIGINT,handle_signal); signal(SIGTERM,handle_signal); signal(SIGPIPE,SIG_IGN);
 
@@ -190,7 +188,6 @@ int main(int argc, char *argv[]) {
 
     kiss_dec_t dec; kiss_dec_init(&dec);
     uint64_t tx_count=0, rx_count=0;
-    int burst_sent=0;
 
     while(running) {
         fd_set rfds; FD_ZERO(&rfds);
@@ -233,14 +230,9 @@ int main(int argc, char *argv[]) {
                 if(al>0){
                     int kl=kiss_send(serial_fd,ax,al);
                     if(kl>0){
-                        tx_count++; burst_sent++;
+                        tx_count++;
                         fprintf(stderr,"serialcla: TX #%llu LTP(%zd)->AX25(%d)->KISS(%d)\n",
                                 (unsigned long long)tx_count,n,al,kl);
-                        if(burst>0 && burst_sent>=burst){
-                            fprintf(stderr,"serialcla: PAUSE %ds\n",pause_sec);
-                            burst_sent=0;
-                            sleep(pause_sec);
-                        }
                     }
                 }
             }
