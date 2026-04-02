@@ -157,9 +157,10 @@ static int parse_device(const char *arg, char *device, size_t dev_size, int *bau
 int main(int argc, char *argv[])
 {
     if (argc < 5) {
-        fprintf(stderr, "Usage: seriallso <listen_port> <device>[:<baud>] <src_call> <dest_call> [hold_seconds]\n");
-        fprintf(stderr, "Example: seriallso 1114 /dev/ttyUSB0:9600 G4DPZ-1 G4DPZ-2 60\n");
-        fprintf(stderr, "  hold_seconds: buffer segments for N seconds before transmitting (default: 0)\n");
+        fprintf(stderr, "Usage: seriallso <listen_port> <device>[:<baud>] <src_call> <dest_call> [hold_seconds] [burst:pause]\n");
+        fprintf(stderr, "Example: seriallso 1114 /dev/ttyUSB0:9600 G4DPZ-1 G4DPZ-2 0 5:15\n");
+        fprintf(stderr, "  hold_seconds: delay before first TX (default: 0)\n");
+        fprintf(stderr, "  burst:pause:  send N segments then pause M seconds for half-duplex (default: off)\n");
         return 1;
     }
 
@@ -169,11 +170,22 @@ int main(int argc, char *argv[])
     const char *src_call = argv[3];
     const char *dest_call = argv[4];
     int hold_seconds = (argc > 5) ? atoi(argv[5]) : 0;
+    int burst_count = 0;   /* 0 = no pacing */
+    int pause_seconds = 0;
+    if (argc > 6) {
+        if (sscanf(argv[6], "%d:%d", &burst_count, &pause_seconds) != 2) {
+            burst_count = 0;
+            pause_seconds = 0;
+        }
+    }
     time_t start_time = time(NULL);
     time_t tx_allowed_at = start_time + hold_seconds;
 
-    fprintf(stderr, "seriallso: port=%d device=%s baud=%d src=%s dest=%s hold=%ds\n",
+    fprintf(stderr, "seriallso: port=%d device=%s baud=%d src=%s dest=%s hold=%ds",
             listen_port, device, baud, src_call, dest_call, hold_seconds);
+    if (burst_count > 0)
+        fprintf(stderr, " pacing=%d:%d", burst_count, pause_seconds);
+    fprintf(stderr, "\n");
 
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
@@ -242,6 +254,13 @@ int main(int argc, char *argv[])
         seg_count++;
         fprintf(stderr, "seriallso: #%llu LTP(%zd) -> AX.25(%d) -> KISS(%d)\n",
                 (unsigned long long)seg_count, n, ax25_len, kiss_len);
+
+        /* Half-duplex pacing: after N segments, pause to let remote side respond */
+        if (burst_count > 0 && (seg_count % burst_count) == 0) {
+            fprintf(stderr, "seriallso: PAUSE %ds (half-duplex, sent %d segments)\n",
+                    pause_seconds, burst_count);
+            sleep(pause_seconds);
+        }
     }
 
     close(udp_sock);

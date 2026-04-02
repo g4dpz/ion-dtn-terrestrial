@@ -36,7 +36,7 @@ sleep 0.5
 
 # Start CLA bridges
 echo "Starting seriallso (UDP:1114 → serial → RF)..."
-"$CLA_DIR/seriallso" 1114 "$DEVICE:9600" G4DPZ-2 G4DPZ-1 &
+"$CLA_DIR/seriallso" 1114 "$DEVICE:9600" G4DPZ-2 G4DPZ-1 0 5:15 &
 echo "Starting seriallsi (RF → serial → UDP:1113)..."
 "$CLA_DIR/seriallsi" "$DEVICE:9600" 1113 &
 sleep 1
