@@ -1,9 +1,9 @@
 # ION Node A (ipn:1) - Source
 1 1 ''
 s
-# 150 bytes/sec ≈ 1200 baud effective throughput
-a contact +1 +3600 1 2 150
-a contact +1 +3600 2 1 150
+# 1200 baud link
+a contact +1 +3600 1 2 1200
+a contact +1 +3600 2 1 1200
 # Earth-Moon OWLT: 1.3 seconds (range = 2 to give margin)
 a range +1 +3600 1 2 2
 m production 1000000
