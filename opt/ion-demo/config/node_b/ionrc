@@ -1,8 +1,8 @@
 # ION Node B (ipn:2) - Destination/Relay
 1 2 ''
 s
-a contact +1 +7200 2 1 150
-a contact +1 +7200 1 2 150
+a contact +1 +7200 2 1 10000
+a contact +1 +7200 1 2 10000
 a range +1 +7200 2 1 15
 m production 1000000
 m consumption 1000000

@@ -1,9 +1,10 @@
 # ION Node A (ipn:1) - Source
 1 1 ''
 s
-# Match actual 1200 baud throughput (150 bytes/sec effective)
-a contact +1 +7200 1 2 150
-a contact +1 +7200 2 1 150
+# Data rate high enough for CGR to accept large bundles
+# Actual pacing happens at the serial/RF layer
+a contact +1 +7200 1 2 10000
+a contact +1 +7200 2 1 10000
 a range +1 +7200 1 2 15
 m production 1000000
 m consumption 1000000

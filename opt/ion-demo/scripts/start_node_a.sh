@@ -1,9 +1,8 @@
 #!/bin/bash
 #
-# start_node_a.sh - Start ION Node A with serial CLA bridge
+# start_node_a.sh - Start ION Node A with integrated serial CLA
 #
 # Usage: ./start_node_a.sh <serial_device>
-# Example: ./start_node_a.sh /dev/tty.usbmodem20A5329335531
 #
 
 set -e
@@ -24,6 +23,7 @@ export LD_LIBRARY_PATH="$ION_BIN:${LD_LIBRARY_PATH:-}"
 echo "════════════════════════════════════════════════════"
 echo "  Starting ION Node A (ipn:1) - G4DPZ-1"
 echo "  Device: $DEVICE"
+echo "  CLA: ionserialcla (integrated, with backpressure)"
 echo "════════════════════════════════════════════════════"
 
 # Hard clean all ION state
@@ -32,20 +32,14 @@ killm 2>/dev/null || true
 rm -rf "$DATA"
 rm -f /tmp/ion.sdrlog /tmp/ion.sdrxnlog /tmp/*.ionlock /tmp/ion.*.sdrlog
 mkdir -p "$DATA"
-killall serialcla 2>/dev/null || true
-lsof -ti udp:1114 2>/dev/null | xargs kill -9 2>/dev/null || true
-lsof -ti udp:1113 2>/dev/null | xargs kill -9 2>/dev/null || true
 sleep 1
 
-# Start CLA bridges
-# Start combined CLA (single process for TX+RX on same serial device)
-echo "Starting serialcla (TX: UDP:1114→serial, RX: serial→UDP:1113)..."
-"$CLA_DIR/serialcla" "$DEVICE:9600" G4DPZ-1 G4DPZ-2 1114 1113 1300 &
-sleep 1
+# Prepare config with actual device path
+sed "s|DEVICE|$DEVICE|g" "$CONFIG/ltprc" > "$DATA/ltprc"
+cp "$CONFIG"/{ionrc,bprc,ipnrc} "$DATA/"
 
-# Start ION
+# Start ION — ionserialcla is invoked by ION automatically
 echo "Starting ION..."
-cp "$CONFIG"/{ionrc,ltprc,bprc,ipnrc} "$DATA/"
 cd "$DATA"
 ionadmin ionrc
 ltpadmin ltprc
@@ -54,10 +48,8 @@ ipnadmin ipnrc
 
 echo ""
 echo "════════════════════════════════════════════════════"
-echo "  Node A running. To send a bundle:"
-echo "    bpsendfile ipn:1.1 ipn:2.1 <file>"
-echo "  To receive:"
-echo "    bprecvfile ipn:1.1 1"
-echo "  To stop:"
-echo "    ionstop"
+echo "  Node A running."
+echo "  Send:    bpsendfile ipn:1.1 ipn:2.1 <file>"
+echo "  Receive: bprecvfile ipn:1.1 1"
+echo "  Stop:    ionstop"
 echo "════════════════════════════════════════════════════"
