@@ -377,30 +377,35 @@ int main(int argc, char *argv[]) {
          * Override total delay via ION_SERIAL_TX_DELAY_MS env var.
          */
         {
-            static int tx_delay_ms = -1;
-            if (tx_delay_ms < 0) {
+            static int rf_baud = 0;
+            static int fixed_delay = 0;
+            if (rf_baud == 0) {
                 const char *d = getenv("ION_SERIAL_TX_DELAY_MS");
                 if (d) {
-                    tx_delay_ms = atoi(d);
-                } else {
-                    /* Auto-calculate from RF baud rate */
-                    const char *rfenv = getenv("ION_SERIAL_RF_BAUD");
-                    int rf_baud = rfenv ? atoi(rfenv) : 1200;
-                    if (rf_baud <= 0) rf_baud = 1200;
-                    int us_per_byte = (10 * 1000000) / rf_baud; /* 10 bits/byte */
-                    tx_delay_ms = (kiss_len * us_per_byte) / 1000 + 100;
+                    fixed_delay = atoi(d);
                 }
+                const char *rfenv = getenv("ION_SERIAL_RF_BAUD");
+                rf_baud = rfenv ? atoi(rfenv) : 1200;
+                if (rf_baud <= 0) rf_baud = 1200;
                 {
                     char msg[128];
                     isprintf(msg, sizeof(msg),
-                        "[i] ionserialcla: TX pacing %d ms per frame", tx_delay_ms);
+                        "[i] ionserialcla: TX pacing rf_baud=%d fixed_delay=%d",
+                        rf_baud, fixed_delay);
                     writeMemo(msg);
                 }
             }
-            if (tx_delay_ms > 0) {
-                dbg("[DBG] TX: pacing delay %d ms", tx_delay_ms);
-                usleep(tx_delay_ms * 1000);
+            int delay_ms;
+            if (fixed_delay > 0) {
+                delay_ms = fixed_delay;
+            } else {
+                /* Per-frame delay based on actual frame size and RF baud */
+                int us_per_byte = (10 * 1000000) / rf_baud; /* 10 bits/byte */
+                delay_ms = (kiss_len * us_per_byte) / 1000 + 100;
             }
+            dbg("[DBG] TX: pacing delay %d ms (frame %d bytes @ %d baud)",
+                delay_ms, kiss_len, rf_baud);
+            usleep(delay_ms * 1000);
         }
 
         sm_TaskYield();
