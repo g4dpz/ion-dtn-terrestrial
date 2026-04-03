@@ -27,6 +27,7 @@
 #include <errno.h>
 #include <stdint.h>
 #include <ctype.h>
+#include <stdarg.h>
 
 #define FEND  0xC0
 #define FESC  0xDB
@@ -39,6 +40,28 @@
 #define MAX_KISS     (MAX_AX25 * 2 + 4)
 
 static int g_running = 1;
+static int g_debug = 0;  /* set via env ION_SERIAL_DEBUG=1 */
+
+static void dbg(const char *fmt, ...) {
+    if (!g_debug) return;
+    char buf[512];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    writeMemo(buf);
+}
+
+static void dbg_hex(const char *label, const uint8_t *data, size_t len) {
+    if (!g_debug) return;
+    char buf[512];
+    int off = snprintf(buf, sizeof(buf), "[DBG] %s (%zu bytes): ", label, len);
+    size_t show = len > 64 ? 64 : len;
+    for (size_t i = 0; i < show && off < (int)sizeof(buf) - 4; i++)
+        off += snprintf(buf + off, sizeof(buf) - off, "%02X ", data[i]);
+    if (len > 64) snprintf(buf + off, sizeof(buf) - off, "...");
+    writeMemo(buf);
+}
 
 /* ── AX.25 ── */
 static void encode_ax25_addr(const char *call, uint8_t *out, int last) {
@@ -82,23 +105,31 @@ static int open_serial(const char *dev, int baud) {
     t.c_iflag&=~(IXON|IXOFF|IXANY|IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL);
     t.c_lflag=0; t.c_oflag=0; t.c_cc[VMIN]=0; t.c_cc[VTIME]=5;
     if(tcsetattr(fd,TCSANOW,&t)!=0){close(fd);return -1;}
-    tcflush(fd,TCIOFLUSH); return fd;
+    tcflush(fd,TCIOFLUSH);
+    dbg("[DBG] Serial opened: fd=%d dev=%s baud=%d", fd, dev, baud);
+    return fd;
 }
 
 /* ── KISS ── */
 static int kiss_send(int fd, const uint8_t *data, size_t len) {
     uint8_t frame[MAX_KISS]; size_t idx=0;
+    dbg("[DBG] kiss_send: encoding %zu bytes", len);
+    dbg_hex("kiss_send input", data, len);
     frame[idx++]=FEND; frame[idx++]=0x00;
     for(size_t i=0;i<len;i++){
-        if(idx>=MAX_KISS-2) return -1;
+        if(idx>=MAX_KISS-2) { dbg("[DBG] kiss_send: frame overflow at byte %zu", i); return -1; }
         if(data[i]==FEND){frame[idx++]=FESC;frame[idx++]=TFEND;}
         else if(data[i]==FESC){frame[idx++]=FESC;frame[idx++]=TFESC;}
         else frame[idx++]=data[i];
     }
     frame[idx++]=FEND;
+    dbg("[DBG] kiss_send: KISS frame %zu bytes", idx);
+    dbg_hex("kiss_send KISS frame", frame, idx);
     size_t w=0;
-    while(w<idx){ssize_t n=write(fd,frame+w,idx-w);if(n<0){if(errno==EINTR)continue;return -1;}w+=n;}
+    while(w<idx){ssize_t n=write(fd,frame+w,idx-w);if(n<0){if(errno==EINTR)continue;dbg("[DBG] kiss_send: write error errno=%d (%s)", errno, strerror(errno));return -1;}dbg("[DBG] kiss_send: wrote %zd bytes (total %zu/%zu)", n, w+n, idx);w+=n;}
+    dbg("[DBG] kiss_send: calling tcdrain...");
     tcdrain(fd); /* BACKPRESSURE: blocks until TNC has transmitted */
+    dbg("[DBG] kiss_send: tcdrain returned");
     return (int)idx;
 }
 
@@ -108,7 +139,11 @@ static int kiss_dec_byte(kiss_dec_t *d, uint8_t byte, uint8_t *out, size_t *out_
     if(byte==FEND){
         if(d->in_frame && d->len>1 && (d->buf[0]&0x0F)==0){
             memcpy(out,d->buf+1,d->len-1); *out_len=d->len-1;
+            dbg("[DBG] kiss_dec: complete frame %zu bytes (cmd=0x%02X)", d->len-1, d->buf[0]);
             d->len=0; d->in_frame=1; d->escape=0; return 1;
+        }
+        if(d->in_frame && d->len>0) {
+            dbg("[DBG] kiss_dec: discarding partial frame %zu bytes (cmd=0x%02X)", d->len, d->len>0?d->buf[0]:0xFF);
         }
         d->len=0; d->in_frame=1; d->escape=0; return 0;
     }
@@ -116,6 +151,7 @@ static int kiss_dec_byte(kiss_dec_t *d, uint8_t byte, uint8_t *out, size_t *out_
     if(d->escape){d->escape=0;if(byte==TFEND)byte=FEND;else if(byte==TFESC)byte=FESC;}
     else if(byte==FESC){d->escape=1;return 0;}
     if(d->len<sizeof(d->buf)) d->buf[d->len++]=byte;
+    else dbg("[DBG] kiss_dec: buffer overflow, dropping byte");
     return 0;
 }
 
@@ -141,26 +177,40 @@ static void *rx_thread(void *parm) {
 
     while (rtp->running) {
         ssize_t n = read(rtp->serial_fd, rbuf, sizeof(rbuf));
-        if (n < 0) { if (errno == EINTR) continue; break; }
+        if (n < 0) { if (errno == EINTR) continue; dbg("[DBG] RX: read error errno=%d (%s)", errno, strerror(errno)); break; }
         if (n == 0) continue;
+
+        dbg("[DBG] RX: read %zd bytes from serial", n);
+        dbg_hex("RX raw serial", rbuf, (size_t)n);
 
         for (ssize_t i = 0; i < n; i++) {
             uint8_t frame[MAX_AX25]; size_t flen;
             if (kiss_dec_byte(&dec, rbuf[i], frame, &flen)) {
+                dbg("[DBG] RX: decoded KISS frame %zu bytes", flen);
+                dbg_hex("RX KISS decoded", frame, flen);
+
                 const uint8_t *payload;
                 int plen = strip_ax25(frame, flen, &payload);
                 if (plen <= 0) {
                     /* Not AX.25, try raw */
+                    dbg("[DBG] RX: not AX.25 (plen=%d), using raw frame", plen);
                     payload = frame;
                     plen = (int)flen;
+                } else {
+                    dbg("[DBG] RX: stripped AX.25 header, payload %d bytes", plen);
                 }
 
+                dbg_hex("RX LTP segment", payload, (size_t)plen);
+
                 /* Feed directly into ION's LTP engine */
+                dbg("[DBG] RX: calling ltpHandleInboundSegment(%d bytes)", plen);
                 if (ltpHandleInboundSegment((char *)payload, plen) < 0) {
                     putErrmsg("Can't handle inbound segment.", NULL);
+                    dbg("[DBG] RX: ltpHandleInboundSegment FAILED");
                     rtp->running = 0;
                     break;
                 }
+                dbg("[DBG] RX: ltpHandleInboundSegment OK");
 
                 count++;
                 if (count % 10 == 1) {
@@ -203,6 +253,16 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    /* Enable debug via environment variable */
+    const char *dbg_env = getenv("ION_SERIAL_DEBUG");
+    if (dbg_env && (dbg_env[0] == '1' || dbg_env[0] == 'y' || dbg_env[0] == 'Y')) {
+        g_debug = 1;
+        writeMemo("[DBG] ionserialcla: debug logging ENABLED");
+    }
+
+    dbg("[DBG] args: dev=%s baud=%d src=%s dst=%s engine=%s",
+        device, baud, src_call, dest_call, argv[4]);
+
     Sdr sdr = getIonsdr();
     LtpVspan *vspan;
     PsmAddress vspanElt;
@@ -214,6 +274,7 @@ int main(int argc, char *argv[]) {
         putErrmsg("No such engine in database.", itoa(remoteEngineId));
         return 1;
     }
+    dbg("[DBG] Found span for engine %d, lsoPid=%d", (int)remoteEngineId, vspan->lsoPid);
 
     if (vspan->lsoPid != ERROR && vspan->lsoPid != sm_TaskIdSelf()) {
         sdr_exit_xn(sdr);
@@ -221,6 +282,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     sdr_exit_xn(sdr);
+    dbg("[DBG] Span check passed, proceeding");
 
     /* Open serial port */
     int serial_fd = open_serial(device, baud);
@@ -255,15 +317,21 @@ int main(int argc, char *argv[]) {
 
     while (g_running && !(sm_SemEnded(vspan->segSemaphore))) {
         char *segment;
+        dbg("[DBG] TX: waiting for ltpDequeueOutboundSegment...");
         int segmentLength = ltpDequeueOutboundSegment(vspan, &segment);
 
         if (segmentLength < 0) {
+            dbg("[DBG] TX: dequeue returned %d (error/shutdown)", segmentLength);
             g_running = 0;
             continue;
         }
         if (segmentLength == 0) {
+            dbg("[DBG] TX: dequeue returned 0 (interrupted), retrying");
             continue; /* Interrupted, retry */
         }
+
+        dbg("[DBG] TX: dequeued LTP segment %d bytes", segmentLength);
+        dbg_hex("TX LTP segment", (uint8_t *)segment, (size_t)segmentLength);
 
         /* Wrap in AX.25 UI frame */
         int ax25_len = build_ax25(dest_call, src_call,
@@ -271,16 +339,23 @@ int main(int argc, char *argv[]) {
                                   ax25_frame, sizeof(ax25_frame));
         if (ax25_len < 0) {
             putErrmsg("AX.25 frame too large.", itoa(segmentLength));
+            dbg("[DBG] TX: AX.25 build failed, segment %d bytes too large", segmentLength);
             continue;
         }
+
+        dbg("[DBG] TX: AX.25 frame %d bytes", ax25_len);
+        dbg_hex("TX AX.25 frame", ax25_frame, (size_t)ax25_len);
 
         /* KISS encode and write to serial — tcdrain provides backpressure */
         int kiss_len = kiss_send(serial_fd, ax25_frame, ax25_len);
         if (kiss_len < 0) {
             putErrmsg("Serial write failed.", NULL);
+            dbg("[DBG] TX: kiss_send FAILED");
             g_running = 0;
             continue;
         }
+
+        dbg("[DBG] TX: sent KISS frame %d bytes", kiss_len);
 
         tx_count++;
         if (tx_count % 10 == 1) {
@@ -295,6 +370,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* Shutdown */
+    dbg("[DBG] Shutting down, tx_count=%llu", (unsigned long long)tx_count);
     rtp.running = 0;
     pthread_join(rx_tid, NULL);
     close(serial_fd);
