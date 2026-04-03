@@ -2,5 +2,5 @@
 # ionserialcla handles both TX and RX on the serial port
 # udplsi is a dummy LSI (ionserialcla feeds segments directly via ltpHandleInboundSegment)
 1 128
-a span 1 128 128 1400 10000 1 'ionserialcla DEVICE:9600 G4DPZ-2 G4DPZ-1 1'
+a span 1 128 128 128 10000 1 'ionserialcla DEVICE:9600 G4DPZ-2 G4DPZ-1 1'
 s 'udplsi 0.0.0.0:1113'
