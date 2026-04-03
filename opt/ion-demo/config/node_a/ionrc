@@ -5,6 +5,6 @@ s
 # Actual pacing happens at the serial/RF layer
 a contact +1 +7200 1 2 10000
 a contact +1 +7200 2 1 10000
-a range +1 +7200 1 2 15
+a range +1 +7200 1 2 30
 m production 1000000
 m consumption 1000000

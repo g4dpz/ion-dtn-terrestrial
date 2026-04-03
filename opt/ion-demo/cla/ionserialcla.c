@@ -366,6 +366,43 @@ int main(int argc, char *argv[]) {
             writeMemo(msg);
         }
 
+        /*
+         * TX pacing: wait for the radio to actually transmit the frame.
+         * tcdrain only waits for the UART→TNC transfer, not RF TX.
+         * The serial baud rate (e.g. 9600) is TNC↔host; the actual
+         * RF rate is typically 1200 baud for packet radio.
+         * At 1200 baud: ~8.3ms/byte over the air.
+         * Add 100ms for TNC TX-delay / TX-tail / turnaround.
+         * Override RF rate via ION_SERIAL_RF_BAUD env var (default 1200).
+         * Override total delay via ION_SERIAL_TX_DELAY_MS env var.
+         */
+        {
+            static int tx_delay_ms = -1;
+            if (tx_delay_ms < 0) {
+                const char *d = getenv("ION_SERIAL_TX_DELAY_MS");
+                if (d) {
+                    tx_delay_ms = atoi(d);
+                } else {
+                    /* Auto-calculate from RF baud rate */
+                    const char *rfenv = getenv("ION_SERIAL_RF_BAUD");
+                    int rf_baud = rfenv ? atoi(rfenv) : 1200;
+                    if (rf_baud <= 0) rf_baud = 1200;
+                    int us_per_byte = (10 * 1000000) / rf_baud; /* 10 bits/byte */
+                    tx_delay_ms = (kiss_len * us_per_byte) / 1000 + 100;
+                }
+                {
+                    char msg[128];
+                    isprintf(msg, sizeof(msg),
+                        "[i] ionserialcla: TX pacing %d ms per frame", tx_delay_ms);
+                    writeMemo(msg);
+                }
+            }
+            if (tx_delay_ms > 0) {
+                dbg("[DBG] TX: pacing delay %d ms", tx_delay_ms);
+                usleep(tx_delay_ms * 1000);
+            }
+        }
+
         sm_TaskYield();
     }
 
