@@ -7,5 +7,5 @@
 # - aggSizeLimit 512: small blocks = fewer segments per block = faster completion
 # - aggTimeLimit 2: wait up to 2s to aggregate before sending
 1 128
-a span 2 128 128 96 512 2 'ionserialcla DEVICE:9600 G4DPZ-1 G4DPZ-2 2'
+a span 2 128 128 64 512 2 'ionserialcla DEVICE:9600 G4DPZ-1 G4DPZ-2 2'
 s 'udplsi 0.0.0.0:1113'

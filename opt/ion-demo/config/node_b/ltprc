@@ -4,5 +4,5 @@
 #
 # span: engine maxExportSess maxImportSess maxSegSize aggSizeLimit aggTimeLimit 'LSO'
 1 128
-a span 1 128 128 96 512 2 'ionserialcla DEVICE:9600 G4DPZ-2 G4DPZ-1 1'
+a span 1 128 128 64 512 2 'ionserialcla DEVICE:9600 G4DPZ-2 G4DPZ-1 1'
 s 'udplsi 0.0.0.0:1113'

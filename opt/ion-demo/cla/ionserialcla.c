@@ -107,6 +107,34 @@ static int open_serial(const char *dev, int baud) {
     if(tcsetattr(fd,TCSANOW,&t)!=0){close(fd);return -1;}
     tcflush(fd,TCIOFLUSH);
     dbg("[DBG] Serial opened: fd=%d dev=%s baud=%d", fd, dev, baud);
+
+    /*
+     * Send KISS parameter commands to configure the TNC.
+     * TX-tail (cmd 0x04): time in 10ms units to keep PTT keyed after last byte.
+     * TX-delay (cmd 0x01): time in 10ms units before first byte after PTT key.
+     * Without sufficient TX-tail, the last bytes of the frame get clipped.
+     * Default: TX-delay=50 (500ms), TX-tail=30 (300ms).
+     * Override via ION_SERIAL_TXTAIL_MS and ION_SERIAL_TXDELAY_MS env vars.
+     */
+    {
+        const char *tail_env = getenv("ION_SERIAL_TXTAIL_MS");
+        const char *delay_env = getenv("ION_SERIAL_TXDELAY_MS");
+        int txtail_10ms = tail_env ? (atoi(tail_env) / 10) : 30;  /* 300ms default */
+        int txdelay_10ms = delay_env ? (atoi(delay_env) / 10) : 50; /* 500ms default */
+        if (txtail_10ms < 0) txtail_10ms = 30;
+        if (txdelay_10ms < 0) txdelay_10ms = 50;
+
+        uint8_t kiss_txdelay[] = { FEND, 0x01, (uint8_t)txdelay_10ms, FEND };
+        uint8_t kiss_txtail[]  = { FEND, 0x04, (uint8_t)txtail_10ms, FEND };
+
+        write(fd, kiss_txdelay, sizeof(kiss_txdelay));
+        write(fd, kiss_txtail, sizeof(kiss_txtail));
+        tcdrain(fd);
+
+        dbg("[DBG] KISS params: TX-delay=%dms TX-tail=%dms",
+            txdelay_10ms * 10, txtail_10ms * 10);
+    }
+
     return fd;
 }
 
