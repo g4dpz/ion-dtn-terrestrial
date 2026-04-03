@@ -3,7 +3,7 @@
 a scheme ipn 'ipnfw' 'ipnadminep'
 a endpoint ipn:1.1 q
 a endpoint ipn:1.2 q
-a protocol ltp 512 100
+a protocol ltp 384 100
 a induct ltp 1 ltpcli
 a outduct ltp 2 ltpclo
 s
