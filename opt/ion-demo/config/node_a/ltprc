@@ -1,5 +1,6 @@
 # LTP Node A - Engine ID 1
-# ionserialcla: ION-integrated serial CLA with backpressure
+# ionserialcla handles both TX and RX on the serial port
+# udplsi is a dummy LSI (ionserialcla feeds segments directly via ltpHandleInboundSegment)
 1 128
 a span 2 128 128 1400 10000 1 'ionserialcla DEVICE:9600 G4DPZ-1 G4DPZ-2 2'
-s 'ionserialcla DEVICE:9600 G4DPZ-1 G4DPZ-2 2'
+s 'udplsi 0.0.0.0:1113'
