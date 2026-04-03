@@ -103,7 +103,7 @@ static int open_serial(const char *dev, int baud) {
     t.c_cflag=(t.c_cflag&~CSIZE)|CS8;
     t.c_cflag&=~(PARENB|PARODD|CSTOPB|CRTSCTS); t.c_cflag|=CLOCAL|CREAD;
     t.c_iflag&=~(IXON|IXOFF|IXANY|IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL);
-    t.c_lflag=0; t.c_oflag=0; t.c_cc[VMIN]=0; t.c_cc[VTIME]=5;
+    t.c_lflag=0; t.c_oflag=0; t.c_cc[VMIN]=1; t.c_cc[VTIME]=10;
     if(tcsetattr(fd,TCSANOW,&t)!=0){close(fd);return -1;}
     tcflush(fd,TCIOFLUSH);
     dbg("[DBG] Serial opened: fd=%d dev=%s baud=%d", fd, dev, baud);
