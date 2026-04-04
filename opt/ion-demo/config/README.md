@@ -1,36 +1,34 @@
-# Configuration Files
+# ION Configuration Files
 
-This directory contains ION-DTN configuration files for each node in the demonstration system.
+Per-node ION-DTN configuration for LTP over serial AX.25/KISS.
 
-## Node Directories
+## Nodes
 
-- **node_a/**: Source node (ipn:10.x, callsign G0AAA-1)
-- **node_b/**: Relay node (ipn:20.x, callsign G0BBB-1)
-- **node_c/**: Destination node (ipn:30.x, callsign G0CCC-1)
+- **node_a/**: ipn:1, callsign G4DPZ-1 (source)
+- **node_b/**: ipn:2, callsign G4DPZ-2 (destination/relay)
+- **node_c/**: ipn:3, callsign G4DPZ-3 (future)
 
-## Configuration Files
+## Files Per Node
 
-Each node directory should contain:
+| File | Purpose |
+|------|---------|
+| `ionrc` | Node identity, contacts, ranges |
+| `ltprc` | LTP spans — launches ionserialcla |
+| `bprc` | Bundle protocol, endpoints, LTP induct/outduct |
+| `ipnrc` | IPN routing plans |
+| `ionconfig` | ION memory settings (if present) |
 
-- `ionconfig`: ION memory and path settings
-- `ionrc`: Node identity, contact plan, and range definitions
-- `bprc`: Bundle protocol configuration (schemes, endpoints, convergence layers)
-- `ipnrc`: IPN routing plans
+## Key Settings
 
-## Usage
-
-When starting ION on a node, specify the appropriate configuration directory:
-
-```bash
-export ION_CONFIG_DIR=/opt/ion-demo/config/node_a
-ionstart -I ionconfig
+The `ltprc` span line controls the serial CLA:
 ```
+a span <engine> 128 128 64 512 2 'ionserialcla DEVICE:9600 <src_call> <dst_call> <engine>'
+```
+
+- `64` = max LTP segment size (must stay ≤64 for Mobilinkd TNC3 at 1200 baud)
+- `512` = aggregation size limit
+- `DEVICE` is replaced by the start script with the actual serial port path
 
 ## Customization
 
-Before deployment, update the following in each configuration:
-
-- IP addresses to match your network
-- Callsigns to match your amateur radio licenses
-- Contact plan schedules to match your demonstration timing
-- Serial port devices to match your TNC connections
+Update callsigns in `ltprc` to match your amateur radio license. Update the serial device path in the start script or ltprc.

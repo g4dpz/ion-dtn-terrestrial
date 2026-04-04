@@ -2,145 +2,144 @@
 
 ## Overview
 
-This document describes the updated architecture using LTP (Licklider Transmission Protocol) directly over serial KISS interfaces, replacing the original IP-over-AX.25 approach.
+ION-DTN Bundle Protocol over LTP, transported via AX.25/KISS frames on 1200 baud packet radio using Mobilinkd TNC3 devices.
 
-## Architecture Change
+## Working Architecture
 
-### Original Approach (IP-over-AX.25)
 ```
-ION Bundle Protocol
+ION Bundle Protocol (bpsendfile / bprecvfile)
        ↓
-UDP/TCP Convergence Layer
+LTP (Licklider Transmission Protocol)
        ↓
-IP-over-AX.25
+ionserialcla (integrated CLA — handles both TX and RX)
        ↓
-AX.25 (kissattach)
+AX.25 UI frames with callsign addressing
        ↓
-KISS TNC
+KISS framing
        ↓
-RF Link
-```
-
-### New Approach (LTP over Serial)
-```
-ION Bundle Protocol
+Serial USB (9600 baud to TNC)
        ↓
-LTP Convergence Layer (ltpclo/ltpcli)
+Mobilinkd TNC3
        ↓
-Serial Device (/dev/ttyUSB0)
-       ↓
-KISS TNC (Mobilinkd TNC3)
-       ↓
-RF Link (FT-817)
+RF Link (1200 baud packet, FT-817)
 ```
 
-## Advantages of LTP over Serial
+## Key Component: ionserialcla
 
-1. **Simpler Stack**: Eliminates AX.25 and IP layers
-2. **Better for DTN**: LTP is designed for delay-tolerant links
-3. **No IP Configuration**: No need for AMPRNet addresses or IP routing
-4. **Direct Control**: ION controls the serial device directly
-5. **Efficient**: Less protocol overhead than IP/UDP stack
+Single integrated CLA that replaces separate `seriallso`/`seriallsi` and links directly against ION's `libltp`:
 
-## ION Configuration Changes
+- **TX**: `ltpDequeueOutboundSegment()` → AX.25/KISS encode → serial → TNC → RF
+- **RX**: RF → TNC → serial → KISS/AX.25 decode → `ltpHandleInboundSegment()`
+- **Pacing**: Per-frame delay based on 1200 baud RF rate (not 9600 serial rate)
+- **KISS TNC config**: Sends TX-delay and TX-tail parameters on startup
+- **Debug**: Enable via `ION_SERIAL_DEBUG=1` environment variable
 
-### Node Configuration
+### Usage
+```
+ionserialcla <device>:<baud> <src_call> <dest_call> <remote_engine_id>
+```
 
-**Node A (Source) - dtn://g4dpz-1/**
+Launched automatically by ION via the `ltprc` span configuration.
+
+## Node Configuration
+
+### Node A (Source) — ipn:1
 - LTP Engine ID: 1
-- Serial Device: /dev/ttyUSB0
-- Baud Rate: 9600 (to TNC)
-- RF Data Rate: 1200 baud (over-the-air)
+- Callsign: G4DPZ-1
+- Serial: /dev/tty.usbmodem* at 9600 baud
 
-**Node B (Relay) - dtn://g4dpz-2/**
+### Node B (Destination/Relay) — ipn:2
 - LTP Engine ID: 2
-- Serial Device: /dev/ttyUSB0
-- Baud Rate: 9600 (to TNC)
-- RF Data Rate: 1200 baud (over-the-air)
+- Callsign: G4DPZ-2
+- Serial: /dev/tty.usbmodem* at 9600 baud
 
-**Node C (Destination) - dtn://g4dpz-3/**
-- LTP Engine ID: 3
-- Serial Device: /dev/ttyUSB0
-- Baud Rate: 9600 (to TNC)
-- RF Data Rate: 1200 baud (over-the-air)
+## Critical Parameters (1200 baud)
 
-### ION Configuration Files
+| Parameter | Value | Reason |
+|-----------|-------|--------|
+| LTP max segment size | **64 bytes** | TNC truncates frames >~80 bytes AX.25 info field |
+| LTP aggregation size | 512 bytes | Smaller blocks = faster completion per block |
+| LTP aggregation time | 2 seconds | Allow small aggregation window |
+| BP protocol max payload | 384 bytes | Aligned with aggregation size |
+| OWLT (one-way light time) | 30 seconds | Accounts for slow TX + report round-trip |
+| Contact data rate | 10000 bytes/sec | Used by CGR only, not actual pacing |
+| TX pacing | ~783ms per frame | Auto-calculated: frame_bytes × 8.33ms/byte + 100ms |
+| Serial VMIN/VTIME | 1 / 10 | Allows KISS decoder to accumulate split reads |
 
-**ionconfig** - Same as before (node identity, memory)
-
-**ionrc** - Contact plan (same concept, different engine IDs)
+### Frame Size Budget (64-byte LTP segment)
 ```
-# Contact from Node 1 to Node 2
-a contact +0 +3600 1 2 100000
-a range +0 +3600 1 2 1
-```
-
-**bprc** - Bundle protocol (use DTN scheme)
-```
-a scheme dtn 'dtn2fw' 'dtn2adminep'
-a endpoint dtn://g4dpz-1/admin q
-a endpoint dtn://g4dpz-1/demo q
-
-# LTP convergence layer
-a protocol ltp 1400 100
-a induct ltp 1 ltpcli
-a outduct ltp 2 ltpclo
+LTP segment:    64 bytes
+AX.25 header:  +16 bytes (dest 7 + src 7 + ctrl 1 + PID 1)
+AX.25 frame:    80 bytes
+KISS overhead:  +3 bytes (FEND + cmd + FEND, plus escaping)
+KISS frame:    ~83 bytes → well under TNC limit
 ```
 
-**ltprc** - LTP configuration (NEW - replaces IP configuration)
+## ION Config Files
+
+### ltprc (per node)
 ```
-# Initialize LTP engine
-1 32
-
-# LTP span to Node 2 (AX.25/KISS serial with callsign ID)
-a span 2 32 32 1400 10000 1 'seriallso /dev/ttyUSB0:9600 G4DPZ-1 G4DPZ-2'
+1 128
+a span <remote_engine> 128 128 64 512 2 'ionserialcla DEVICE:9600 <src_call> <dst_call> <remote_engine>'
+s 'udplsi 0.0.0.0:1113'
 ```
 
-## Implementation Steps
+### bprc (per node)
+```
+1
+a scheme ipn 'ipnfw' 'ipnadminep'
+a endpoint ipn:<node>.1 q
+a endpoint ipn:<node>.2 q
+a protocol ltp 384 100
+a induct ltp <node> ltpcli
+a outduct ltp <remote> ltpclo
+s
+```
 
-### Phase 1: TNC Initialization (COMPLETE)
-- ✅ Configure serial port
-- ✅ Initialize KISS mode (Mobilinkd TNC3)
-- ✅ Verify device connectivity
+### ionrc (per node)
+```
+1 <node> ''
+s
+a contact +1 +7200 <node> <remote> 10000
+a contact +1 +7200 <remote> <node> 10000
+a range +1 +7200 <node> <remote> 30
+m production 1000000
+m consumption 1000000
+```
 
-### Phase 2: ION with LTP (NEXT)
-- [ ] Create ltprc configuration files
-- [ ] Update bprc to use LTP convergence layer
-- [ ] Configure LTP spans between nodes
-- [ ] Test LTP connectivity
+## Environment Variables
 
-### Phase 3: Bundle Transfer
-- [ ] Send test bundles using bpsendfile
-- [ ] Verify bundle reception using bprecvfile
-- [ ] Test store-and-forward through relay node
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ION_SERIAL_DEBUG` | off | Set to `1` for verbose debug logging |
+| `ION_SERIAL_RF_BAUD` | 1200 | RF baud rate for TX pacing calculation |
+| `ION_SERIAL_TX_DELAY_MS` | auto | Override per-frame pacing delay (ms) |
+| `ION_SERIAL_TXTAIL_MS` | 300 | KISS TX-tail sent to TNC on startup |
+| `ION_SERIAL_TXDELAY_MS` | 500 | KISS TX-delay sent to TNC on startup |
 
-## Key Differences from IP-over-AX.25
+## Operating Procedure
 
-| Aspect | IP-over-AX.25 | LTP over Serial |
-|--------|---------------|-----------------|
-| Network Layer | IP | None (direct serial) |
-| Convergence Layer | UDP/TCP | LTP |
-| Address Type | IP addresses | LTP engine IDs |
-| Interface Setup | kissattach + ifconfig | Direct serial open |
-| Routing | IP routing | ION contact graph routing |
-| Tools Needed | ax25-tools, kissattach | ION only |
+```bash
+# Start Node B (receiver) first
+export ION_SERIAL_DEBUG=1
+./opt/ion-demo/scripts/start_node_b.sh /dev/tty.usbmodemXXX
 
-## Configuration File Updates Needed
+# Start receiver on Node B
+cd /tmp/ion_node_b
+bprecvfile ipn:2.1 1
 
-1. **bprc** - Change from UDP to LTP protocol
-2. **ltprc** - New file for LTP configuration
-3. **ionrc** - Update engine IDs (not IP addresses)
-4. **Remove**: No need for IP addresses or AX.25 configuration
+# Start Node A (sender)
+export ION_SERIAL_DEBUG=1
+./opt/ion-demo/scripts/start_node_a.sh /dev/tty.usbmodemYYY
 
-## Testing Approach
+# Send a file from Node A
+cd /tmp/ion_node_a
+bpsendfile ipn:1.1 ipn:2.1 /path/to/file
+```
 
-1. **Single Link Test**: Node A → Node B via LTP
-2. **Loopback Test**: Send bundle from A, receive at A
-3. **Two-Hop Test**: A → B → C with store-and-forward
-4. **Scheduled Contacts**: Test with contact plan windows
+## Lessons Learned
 
-## References
-
-- ION LTP Documentation: ION.pdf Section 3.4
-- LTP RFC: RFC 5326
-- ION Configuration Guide: ionconfig(5), ltprc(5)
+1. **TNC frame size limit**: Mobilinkd TNC3 truncates AX.25 frames with info fields >~80 bytes. 64-byte LTP segments are the safe maximum.
+2. **TX pacing is essential**: The serial port (9600) is 8× faster than RF (1200). Without pacing, the TNC buffer overflows and frames are lost.
+3. **Split serial reads**: The TNC delivers frames in chunks. VMIN=1/VTIME=10 and the KISS decoder's byte-at-a-time accumulation handle this correctly.
+4. **tcdrain is not RF backpressure**: It only waits for UART→TNC transfer, not actual RF transmission. Software pacing is required.

@@ -1,47 +1,15 @@
 # Contact Plans
 
-This directory contains contact plan definitions for different demonstration scenarios.
+Contact plans define when nodes can communicate. Currently configured as continuous contacts in `ionrc` files.
 
-## Contact Plan Files
+## Current Setup
 
-- `continuous.plan`: Continuous contact for Phase 2 testing (two-node)
-- `delayed.plan`: Scheduled outage and restoration for delayed delivery demo
-- `relay.plan`: Non-overlapping windows for three-node relay demo
-- `interrupted.plan`: Mid-transfer interruption scenarios
-
-## Contact Plan Format
-
-Contact plans use ION format with the following structure:
-
+Both nodes use a 2-hour continuous contact window:
 ```
-# Contact definition: start_time duration from_node to_node data_rate
-a contact +0 +300 10 20 100000
-a contact +600 +900 20 30 100000
-
-# Range definition: start_time duration from_node to_node distance
-a range +0 +3600 10 20 1
-a range +0 +3600 20 30 1
+a contact +1 +7200 1 2 10000
+a range +1 +7200 1 2 30
 ```
 
-## Time Format
+## Future Use
 
-- Relative times: `+seconds` (e.g., `+300` = 300 seconds from now)
-- Absolute times: Unix timestamp
-
-## Node Numbers
-
-- Node A (Source): 10
-- Node B (Relay): 20
-- Node C (Destination): 30
-
-## Loading Contact Plans
-
-Use the load_contact_plan.sh script:
-
-```bash
-/opt/ion-demo/scripts/load_contact_plan.sh relay.plan
-```
-
-## Creating Custom Plans
-
-Copy an existing plan and modify the contact windows to match your demonstration timing requirements.
+This directory is reserved for scheduled contact plan files for testing store-and-forward with link outages.

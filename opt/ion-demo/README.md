@@ -1,67 +1,70 @@
-# ION-DTN UHF Demonstration System
+# ION-DTN Terrestrial Packet Radio Demo
 
-This directory contains the complete ION-DTN demonstration system for deployment to target platforms.
+DTN file transfer over 1200 baud UHF amateur packet radio using ION-DTN, LTP, and AX.25/KISS via Mobilinkd TNC3 devices.
+
+## Architecture
+
+```
+bpsendfile → ION BP → LTP → ionserialcla → AX.25/KISS → TNC → RF
+RF → TNC → AX.25/KISS → ionserialcla → LTP → ION BP → bprecvfile
+```
 
 ## Directory Structure
 
 ```
-/opt/ion-demo/
-├── config/           # ION configuration files for each node
-│   ├── node_a/      # Source node configuration
-│   ├── node_b/      # Relay node configuration
-│   └── node_c/      # Destination node configuration
-├── scripts/         # Operational scripts and demo applications
-├── contact_plans/   # Contact plan definitions
-├── logs/           # System and event logs
-└── data/           # Bundle storage
-    └── bundles/    # Persistent bundle storage
+opt/ion-demo/
+├── cla/              # ionserialcla — integrated LTP/AX.25/KISS CLA
+├── config/           # ION configuration files per node
+│   ├── node_a/       # ipn:1, G4DPZ-1
+│   ├── node_b/       # ipn:2, G4DPZ-2
+│   └── node_c/       # ipn:3, G4DPZ-3 (future)
+├── scripts/          # Start/stop scripts
+├── docs/             # Hardware setup guides
+├── logs/             # ION log output
+└── data/             # Bundle storage
 ```
 
-## Deployment
+## Hardware
 
-### Prerequisites
-
-**AMPRNet IP Address Allocation (Required for Production):**
-
-Before deploying to production, you MUST obtain AMPRNet IP addresses (44.x.y.z) for each node:
-
-1. Visit https://portal.ampr.org/
-2. Register or log in with your amateur radio callsign
-3. Request IP address allocation for your nodes
-4. Update all configuration files to replace 192.168.25.x addresses with your allocated AMPRNet addresses
-
-**Note:** The 192.168.25.x addresses in the configuration files are placeholders for development and testing only. They will NOT work for over-the-air amateur radio operation.
-
-### Installation Steps
-
-1. Copy this entire directory to `/opt/ion-demo/` on each target node
-2. Ensure proper permissions: `sudo chown -R $USER:$USER /opt/ion-demo`
-3. Follow the installation guide in the project documentation
-4. Configure node-specific settings in the appropriate config directory
-
-## Node Assignment
-
-- **Node A (Source)**: Use `config/node_a/` configuration (G4DPZ-1)
-- **Node B (Relay)**: Use `config/node_b/` configuration (G4DPZ-2)
-- **Node C (Destination)**: Use `config/node_c/` configuration (G4DPZ-3)
-
-## Hardware Requirements
-
-**Recommended Setup:**
-- 3x Mobilinkd TNC3 (Bluetooth/USB KISS TNC)
-- 3x Yaesu FT-817 transceivers (or FT-817ND)
-- 3x Raspberry Pi 4 (or similar Linux hosts)
-- 3x USB cables (Type-A to Micro-USB for TNC3)
-- 3x TNC-to-radio data cables (3.5mm to 6-pin mini-DIN for FT-817)
-- 3x Dummy loads (50Ω, 10W minimum) for bench testing
-- Antennas for field operation
-- 3x Yaesu FT-817 transceivers (HF/VHF/UHF portable)
-- 3x Mobilinkd TNC3 (Bluetooth/USB KISS TNC)
-- 3x Raspberry Pi 4 (or similar Linux hosts)
-- 3x USB cables (for TNC3 to Raspberry Pi connection)
-- 3x Audio cables (TNC3 to FT-817 data port)
-- Antennas or attenuated bench setup
+- 2× Mobilinkd TNC3 (USB KISS TNC)
+- 2× Yaesu FT-817 (or any 1200 baud FM transceiver)
+- 2× Mac/Linux hosts with ION-DTN compiled
+- USB cables, TNC-to-radio audio cables
 
 ## Quick Start
 
-See the project documentation for detailed setup and operation instructions.
+```bash
+# Build the CLA
+cd opt/ion-demo/cla
+make
+
+# Start Node B (receiver) first
+export ION_SERIAL_DEBUG=1
+./scripts/start_node_b.sh /dev/tty.usbmodemXXX
+
+# On Node B, start the file receiver
+cd /tmp/ion_node_b
+bprecvfile ipn:2.1 1
+
+# Start Node A (sender)
+export ION_SERIAL_DEBUG=1
+./scripts/start_node_a.sh /dev/tty.usbmodemYYY
+
+# Send a file
+cd /tmp/ion_node_a
+bpsendfile ipn:1.1 ipn:2.1 /path/to/file
+
+# Stop
+ionstop
+```
+
+## Key Parameters (1200 baud)
+
+- LTP segment size: 64 bytes (TNC limit)
+- TX pacing: ~783ms per frame (auto-calculated from RF baud)
+- OWLT: 30 seconds
+- Aggregation: 512 bytes per LTP block
+
+## Callsigns
+
+Every AX.25 frame carries source and destination callsigns (G4DPZ-1, G4DPZ-2) in the header, satisfying amateur radio identification requirements.
