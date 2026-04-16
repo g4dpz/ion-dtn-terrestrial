@@ -1559,15 +1559,43 @@ int ltp_engine_run(ltp_engine_t *eng, int fd, int send_mode)
                     if (aprs_is_ax25_frame(kiss_payload, kiss_payload_len)) {
                         aprs_log_packet(kiss_payload, kiss_payload_len,
                                         eng->config.verbose);
-                        /* Auto-register sender as DTN endpoint for reverse lookup */
+                        /* Auto-register sender as DTN endpoint for reverse lookup.
+                         * Register both uppercase (from AX.25) and lowercase
+                         * variants since DJB2 hash is case-sensitive. */
                         char asrc[16];
                         int alen = ax25_strip_frame(kiss_payload, kiss_payload_len,
                                                     asrc, NULL, NULL);
                         if (alen >= 0 && asrc[0] != '\0') {
-                            /* Strip SSID "-0" suffix for clean EID, keep others */
+                            /* Register as-is (uppercase from AX.25 decode) */
                             char aeid[80];
                             snprintf(aeid, sizeof(aeid), "dtn://%s", asrc);
                             ltp_register_endpoint(eng, aeid);
+
+                            /* Also register lowercase variant */
+                            char lower[80];
+                            snprintf(lower, sizeof(lower), "dtn://%s", asrc);
+                            for (int li = 6; lower[li]; li++) {
+                                if (lower[li] >= 'A' && lower[li] <= 'Z')
+                                    lower[li] += 32;
+                            }
+                            ltp_register_endpoint(eng, lower);
+
+                            /* Strip trailing "-0" and register that too */
+                            size_t slen = strlen(asrc);
+                            if (slen >= 2 && asrc[slen-2] == '-' && asrc[slen-1] == '0') {
+                                char trimmed[80];
+                                snprintf(trimmed, sizeof(trimmed), "dtn://");
+                                size_t tlen = slen - 2;
+                                memcpy(trimmed + 6, asrc, tlen);
+                                trimmed[6 + tlen] = '\0';
+                                ltp_register_endpoint(eng, trimmed);
+                                /* Lowercase trimmed */
+                                for (int li = 6; trimmed[li]; li++) {
+                                    if (trimmed[li] >= 'A' && trimmed[li] <= 'Z')
+                                        trimmed[li] += 32;
+                                }
+                                ltp_register_endpoint(eng, trimmed);
+                            }
                         }
                     } else {
                         ltp_process_segment(eng, fd, kiss_payload, kiss_payload_len);
