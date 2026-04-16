@@ -133,7 +133,7 @@ All transmissions are non-commercial, between licensed amateur radio stations, u
 | Transceiver | Yaesu FT-817 (5W VHF/UHF, operating within OFCOM-permitted bands and power levels) |
 | TNC | Mobilinkd TNC3 (USB KISS TNC, 1200 baud AFSK) |
 | Computer | Ubuntu Linux laptop / Raspberry Pi |
-| Software | Custom open-source C tool (`kiss_interface`), source available at [https://github.com/g4dpz/ion-dtn-terrestrial](https://github.com/g4dpz/ion-dtn-terrestrial) |
+| Software | Custom open-source C tool (`kiss_interface`), licensed under the Apache License 2.0. Source code: [https://github.com/g4dpz/ion-dtn-terrestrial](https://github.com/g4dpz/ion-dtn-terrestrial) |
 
 ## Contact
 

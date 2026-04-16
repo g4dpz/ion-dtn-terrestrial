@@ -107,4 +107,6 @@ This system operates under OFCOM amateur radio licence conditions. See [docs/OFC
 
 ## Licence
 
-This project is developed by AMSAT-UK for amateur radio experimentation and education.
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
+
+Copyright 2026 AMSAT-UK.
