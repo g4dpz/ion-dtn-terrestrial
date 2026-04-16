@@ -9,6 +9,10 @@ kiss-interface/test_ax25
 kiss-interface/test_serial
 kiss-interface/test_cli
 kiss-interface/test_ping
+kiss-interface/test_sdnv
+kiss-interface/test_ltp
+kiss-interface/test_beacon
+kiss-interface/test_aprs
 *.o
 *.dSYM/
 
