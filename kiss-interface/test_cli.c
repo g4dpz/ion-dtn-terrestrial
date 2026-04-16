@@ -20,7 +20,8 @@ typedef enum {
     CMD_MODE_NONE,
     CMD_MODE_SEND,
     CMD_MODE_RECEIVE,
-    CMD_MODE_ECHO
+    CMD_MODE_ECHO,
+    CMD_MODE_PING
 } cmd_mode_t;
 
 typedef struct {
@@ -33,6 +34,9 @@ typedef struct {
     int         txtail_ms;
     int         delay_ms;
     int         verbose;
+    int         count;
+    int         timeout_ms;
+    int         interval_ms;
     cmd_mode_t  mode;
 } cli_args_t;
 
@@ -388,6 +392,140 @@ static int test_validate_valid_send(void)
     return 1;
 }
 
+/* ================================================================== */
+/* Test: ping subcommand and options (Req 1.1, 1.2, 1.3, 1.4, 1.5)    */
+/* ================================================================== */
+
+static int test_parse_ping_subcommand(void)
+{
+    cli_args_t args;
+    optind = 1;
+    char *argv[] = { "kiss_interface", "ping", "--device", "/dev/ttyUSB0",
+                     "--src", "N0CALL", "--dst", "CQ", NULL };
+    int argc = 8;
+
+    if (parse_args(argc, argv, &args) != 0) {
+        printf("\n    FAIL: parse_args returned error for ping\n");
+        return 0;
+    }
+    if (args.mode != CMD_MODE_PING) {
+        printf("\n    FAIL: mode = %d, expected CMD_MODE_PING (%d)\n",
+               args.mode, CMD_MODE_PING);
+        return 0;
+    }
+    return 1;
+}
+
+static int test_parse_ping_options(void)
+{
+    cli_args_t args;
+    optind = 1;
+    char *argv[] = { "kiss_interface", "ping", "--device", "/dev/ttyUSB0",
+                     "--src", "N0CALL", "--dst", "CQ",
+                     "--count", "10", "--timeout", "3000",
+                     "--interval", "500", NULL };
+    int argc = 14;
+
+    if (parse_args(argc, argv, &args) != 0) {
+        printf("\n    FAIL: parse_args returned error\n");
+        return 0;
+    }
+    if (args.count != 10) {
+        printf("\n    FAIL: count = %d, expected 10\n", args.count);
+        return 0;
+    }
+    if (args.timeout_ms != 3000) {
+        printf("\n    FAIL: timeout_ms = %d, expected 3000\n", args.timeout_ms);
+        return 0;
+    }
+    if (args.interval_ms != 500) {
+        printf("\n    FAIL: interval_ms = %d, expected 500\n", args.interval_ms);
+        return 0;
+    }
+    return 1;
+}
+
+static int test_parse_ping_defaults(void)
+{
+    cli_args_t args;
+    optind = 1;
+    char *argv[] = { "kiss_interface", "ping", "--device", "/dev/ttyUSB0",
+                     "--src", "N0CALL", "--dst", "CQ", NULL };
+    int argc = 8;
+
+    if (parse_args(argc, argv, &args) != 0) {
+        printf("\n    FAIL: parse_args returned error\n");
+        return 0;
+    }
+    if (args.count != 4) {
+        printf("\n    FAIL: count default = %d, expected 4\n", args.count);
+        return 0;
+    }
+    if (args.timeout_ms != 5000) {
+        printf("\n    FAIL: timeout_ms default = %d, expected 5000\n", args.timeout_ms);
+        return 0;
+    }
+    if (args.interval_ms != 1000) {
+        printf("\n    FAIL: interval_ms default = %d, expected 1000\n", args.interval_ms);
+        return 0;
+    }
+    return 1;
+}
+
+static int test_validate_missing_device_ping(void)
+{
+    cli_args_t args;
+    memset(&args, 0, sizeof(args));
+    args.mode = CMD_MODE_PING;
+    args.src_call = "N0CALL";
+    args.dst_call = "CQ";
+    args.count = 4;
+    args.timeout_ms = 5000;
+    /* device is NULL */
+
+    if (validate_args(&args) == 0) {
+        printf("\n    FAIL: validate_args should fail with missing device for ping\n");
+        return 0;
+    }
+    return 1;
+}
+
+static int test_validate_missing_src_ping(void)
+{
+    cli_args_t args;
+    memset(&args, 0, sizeof(args));
+    args.mode = CMD_MODE_PING;
+    args.device = "/dev/ttyUSB0";
+    args.dst_call = "CQ";
+    args.count = 4;
+    args.timeout_ms = 5000;
+    /* src_call is NULL */
+
+    if (validate_args(&args) == 0) {
+        printf("\n    FAIL: validate_args should fail with missing src for ping\n");
+        return 0;
+    }
+    return 1;
+}
+
+static int test_validate_missing_dst_ping(void)
+{
+    cli_args_t args;
+    memset(&args, 0, sizeof(args));
+    args.mode = CMD_MODE_PING;
+    args.device = "/dev/ttyUSB0";
+    args.src_call = "N0CALL";
+    args.count = 4;
+    args.timeout_ms = 5000;
+    /* dst_call is NULL */
+
+    if (validate_args(&args) == 0) {
+        printf("\n    FAIL: validate_args should fail with missing dst for ping\n");
+        return 0;
+    }
+    return 1;
+}
+
 /* Test: unknown subcommand returns error */
 static int test_parse_unknown_subcommand(void)
 {
@@ -458,6 +596,14 @@ int main(void)
     TEST(validate_receive_no_callsigns);
     TEST(validate_mode_none);
     TEST(validate_valid_send);
+
+    printf("\nPing subcommand and options (Req 1.1-1.6):\n");
+    TEST(parse_ping_subcommand);
+    TEST(parse_ping_options);
+    TEST(parse_ping_defaults);
+    TEST(validate_missing_device_ping);
+    TEST(validate_missing_src_ping);
+    TEST(validate_missing_dst_ping);
 
     printf("\n-----------------\n");
     printf("Results: %d/%d passed\n", tests_passed, tests_run);
