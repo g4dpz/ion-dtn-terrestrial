@@ -951,12 +951,20 @@ int cmd_ltp_send(int fd, const char *local_eid, const char *remote_eid,
 static void ltp_recv_callback(const uint8_t *data, uint32_t len,
                                uint64_t remote_engine_id, void *ctx)
 {
-    (void)ctx;
     time_t now = time(NULL);
     struct tm *tm = localtime(&now);
     char ts[32];
     strftime(ts, sizeof(ts), "%H:%M:%S", tm);
-    printf("[%s] Block from engine %lu: ", ts, (unsigned long)remote_engine_id);
+
+    /* Try to resolve engine ID to DTN endpoint */
+    const char *eid = NULL;
+    if (ctx) eid = ltp_engine_id_to_eid((const ltp_engine_t *)ctx, remote_engine_id);
+
+    if (eid)
+        printf("[%s] Block from %s: ", ts, eid);
+    else
+        printf("[%s] Block from engine %lu: ", ts, (unsigned long)remote_engine_id);
+
     fwrite(data, 1, len, stdout);
     printf("\n");
     fflush(stdout);
@@ -985,7 +993,7 @@ int cmd_ltp_recv(int fd, const char *local_eid,
     }
 
     eng.on_block_received = ltp_recv_callback;
-    eng.cb_ctx = NULL;
+    eng.cb_ctx = &eng;
 
     printf("LTP recv on %s (MTU=%d, OWLT=%dms)... (Ctrl-C to stop)\n",
            local_eid, mtu, owlt_ms);

@@ -14,7 +14,9 @@
 #include "sdnv.h"
 #include "kiss.h"
 #include "aprs.h"
+#include "ax25.h"
 #include <string.h>
+#include <stdio.h>
 #include <unistd.h>
 #include <termios.h>
 #include <errno.h>
@@ -1554,11 +1556,22 @@ int ltp_engine_run(ltp_engine_t *eng, int fd, int send_mode)
                                            kiss_payload, sizeof(kiss_payload),
                                            &kiss_payload_len);
                 if (rc == 1) {
-                    if (aprs_is_ax25_frame(kiss_payload, kiss_payload_len))
+                    if (aprs_is_ax25_frame(kiss_payload, kiss_payload_len)) {
                         aprs_log_packet(kiss_payload, kiss_payload_len,
                                         eng->config.verbose);
-                    else
+                        /* Auto-register sender as DTN endpoint for reverse lookup */
+                        char asrc[16];
+                        int alen = ax25_strip_frame(kiss_payload, kiss_payload_len,
+                                                    asrc, NULL, NULL);
+                        if (alen >= 0 && asrc[0] != '\0') {
+                            /* Strip SSID "-0" suffix for clean EID, keep others */
+                            char aeid[80];
+                            snprintf(aeid, sizeof(aeid), "dtn://%s", asrc);
+                            ltp_register_endpoint(eng, aeid);
+                        }
+                    } else {
                         ltp_process_segment(eng, fd, kiss_payload, kiss_payload_len);
+                    }
                 }
             }
         }
@@ -1638,4 +1651,14 @@ int ltp_register_endpoint(ltp_engine_t *eng, const char *eid)
     eng->endpoint_count++;
 
     return 0;
+}
+
+const char *ltp_engine_id_to_eid(const ltp_engine_t *eng, uint64_t engine_id)
+{
+    if (!eng) return NULL;
+    for (uint32_t i = 0; i < eng->endpoint_count; i++) {
+        if (eng->endpoints[i].engine_id == engine_id)
+            return eng->endpoints[i].eid;
+    }
+    return NULL;
 }

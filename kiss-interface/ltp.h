@@ -205,6 +205,9 @@ int  ltp_cancel_session(ltp_engine_t *eng, int fd,
 uint64_t ltp_eid_to_engine_id(const char *eid);
 int      ltp_register_endpoint(ltp_engine_t *eng, const char *eid);
 
+/* Reverse lookup: find EID string for an engine ID. Returns NULL if not found. */
+const char *ltp_engine_id_to_eid(const ltp_engine_t *eng, uint64_t engine_id);
+
 /* ---- Segment Encoding ---- */
 int  ltp_encode_data_segment(const ltp_data_segment_t *seg,
                              uint8_t *out, size_t out_size);
