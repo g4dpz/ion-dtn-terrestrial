@@ -21,7 +21,9 @@ typedef enum {
     CMD_MODE_SEND,
     CMD_MODE_RECEIVE,
     CMD_MODE_ECHO,
-    CMD_MODE_PING
+    CMD_MODE_PING,
+    CMD_MODE_LTP_SEND,
+    CMD_MODE_LTP_RECV
 } cmd_mode_t;
 
 typedef struct {
@@ -37,6 +39,11 @@ typedef struct {
     int         count;
     int         timeout_ms;
     int         interval_ms;
+    const char *local_eid;
+    const char *remote_eid;
+    int         mtu;
+    int         owlt_ms;
+    int         retries;
     cmd_mode_t  mode;
 } cli_args_t;
 
@@ -561,6 +568,190 @@ static int test_parse_no_args(void)
 }
 
 /* ================================================================== */
+/* Test: ltp-send subcommand parsing (Req 10.1, 10.2)                  */
+/* ================================================================== */
+
+static int test_parse_ltp_send_subcommand(void)
+{
+    cli_args_t args;
+    optind = 1;
+    char *argv[] = { "kiss_interface", "ltp-send", "--device", "/dev/ttyACM0",
+                     "--local", "dtn://g4dpz-1", "--remote", "dtn://g4dpz-2",
+                     "--mtu", "128", "--owlt", "2000", "--retries", "5",
+                     "Hello LTP", NULL };
+    int argc = 15;
+
+    if (parse_args(argc, argv, &args) != 0) {
+        printf("\n    FAIL: parse_args returned error for ltp-send\n");
+        return 0;
+    }
+    if (args.mode != CMD_MODE_LTP_SEND) {
+        printf("\n    FAIL: mode = %d, expected CMD_MODE_LTP_SEND (%d)\n",
+               args.mode, CMD_MODE_LTP_SEND);
+        return 0;
+    }
+    if (strcmp(args.local_eid, "dtn://g4dpz-1") != 0) {
+        printf("\n    FAIL: local_eid = '%s'\n", args.local_eid);
+        return 0;
+    }
+    if (strcmp(args.remote_eid, "dtn://g4dpz-2") != 0) {
+        printf("\n    FAIL: remote_eid = '%s'\n", args.remote_eid);
+        return 0;
+    }
+    if (args.mtu != 128) {
+        printf("\n    FAIL: mtu = %d, expected 128\n", args.mtu);
+        return 0;
+    }
+    if (args.owlt_ms != 2000) {
+        printf("\n    FAIL: owlt_ms = %d, expected 2000\n", args.owlt_ms);
+        return 0;
+    }
+    if (args.retries != 5) {
+        printf("\n    FAIL: retries = %d, expected 5\n", args.retries);
+        return 0;
+    }
+    if (strcmp(args.payload, "Hello LTP") != 0) {
+        printf("\n    FAIL: payload = '%s'\n", args.payload);
+        return 0;
+    }
+    return 1;
+}
+
+/* ================================================================== */
+/* Test: ltp-recv subcommand parsing (Req 11.1, 11.2)                  */
+/* ================================================================== */
+
+static int test_parse_ltp_recv_subcommand(void)
+{
+    cli_args_t args;
+    optind = 1;
+    char *argv[] = { "kiss_interface", "ltp-recv", "--device", "/dev/ttyACM0",
+                     "--local", "dtn://g4dpz-2", "--verbose", NULL };
+    int argc = 7;
+
+    if (parse_args(argc, argv, &args) != 0) {
+        printf("\n    FAIL: parse_args returned error for ltp-recv\n");
+        return 0;
+    }
+    if (args.mode != CMD_MODE_LTP_RECV) {
+        printf("\n    FAIL: mode = %d, expected CMD_MODE_LTP_RECV (%d)\n",
+               args.mode, CMD_MODE_LTP_RECV);
+        return 0;
+    }
+    if (strcmp(args.local_eid, "dtn://g4dpz-2") != 0) {
+        printf("\n    FAIL: local_eid = '%s'\n", args.local_eid);
+        return 0;
+    }
+    if (!args.verbose) {
+        printf("\n    FAIL: verbose not set\n");
+        return 0;
+    }
+    return 1;
+}
+
+/* ================================================================== */
+/* Test: LTP defaults (Req 10.2, 11.2)                                 */
+/* ================================================================== */
+
+static int test_parse_ltp_defaults(void)
+{
+    cli_args_t args;
+    optind = 1;
+    char *argv[] = { "kiss_interface", "ltp-send", "--device", "/dev/ttyACM0",
+                     "--local", "dtn://test", "--remote", "dtn://remote",
+                     "payload", NULL };
+    int argc = 9;
+
+    if (parse_args(argc, argv, &args) != 0) {
+        printf("\n    FAIL: parse_args returned error\n");
+        return 0;
+    }
+    if (args.mtu != 64) {
+        printf("\n    FAIL: mtu default = %d, expected 64\n", args.mtu);
+        return 0;
+    }
+    if (args.owlt_ms != 1500) {
+        printf("\n    FAIL: owlt_ms default = %d, expected 1500\n", args.owlt_ms);
+        return 0;
+    }
+    if (args.retries != 7) {
+        printf("\n    FAIL: retries default = %d, expected 7\n", args.retries);
+        return 0;
+    }
+    return 1;
+}
+
+/* ================================================================== */
+/* Test: missing --local for ltp-send (Req 10.1)                       */
+/* ================================================================== */
+
+static int test_validate_missing_local_ltp_send(void)
+{
+    cli_args_t args;
+    memset(&args, 0, sizeof(args));
+    args.mode = CMD_MODE_LTP_SEND;
+    args.device = "/dev/ttyUSB0";
+    args.remote_eid = "dtn://remote";
+    args.payload = "test";
+    args.mtu = 64;
+    args.owlt_ms = 1500;
+    args.retries = 7;
+    /* local_eid is NULL */
+
+    if (validate_args(&args) == 0) {
+        printf("\n    FAIL: validate_args should fail with missing --local for ltp-send\n");
+        return 0;
+    }
+    return 1;
+}
+
+/* ================================================================== */
+/* Test: missing --remote for ltp-send                                 */
+/* ================================================================== */
+
+static int test_validate_missing_remote_ltp_send(void)
+{
+    cli_args_t args;
+    memset(&args, 0, sizeof(args));
+    args.mode = CMD_MODE_LTP_SEND;
+    args.device = "/dev/ttyUSB0";
+    args.local_eid = "dtn://local";
+    args.payload = "test";
+    args.mtu = 64;
+    args.owlt_ms = 1500;
+    args.retries = 7;
+    /* remote_eid is NULL */
+
+    if (validate_args(&args) == 0) {
+        printf("\n    FAIL: validate_args should fail with missing --remote for ltp-send\n");
+        return 0;
+    }
+    return 1;
+}
+
+/* ================================================================== */
+/* Test: missing --local for ltp-recv                                  */
+/* ================================================================== */
+
+static int test_validate_missing_local_ltp_recv(void)
+{
+    cli_args_t args;
+    memset(&args, 0, sizeof(args));
+    args.mode = CMD_MODE_LTP_RECV;
+    args.device = "/dev/ttyUSB0";
+    args.mtu = 64;
+    args.owlt_ms = 1500;
+    args.retries = 7;
+    /* local_eid is NULL */
+
+    if (validate_args(&args) == 0) {
+        printf("\n    FAIL: validate_args should fail with missing --local for ltp-recv\n");
+        return 0;
+    }
+    return 1;
+}
+
+/* ================================================================== */
 /* main                                                                */
 /* ================================================================== */
 
@@ -604,6 +795,14 @@ int main(void)
     TEST(validate_missing_device_ping);
     TEST(validate_missing_src_ping);
     TEST(validate_missing_dst_ping);
+
+    printf("\nLTP subcommands and options (Req 10.1, 10.2, 11.1, 11.2, 14.1):\n");
+    TEST(parse_ltp_send_subcommand);
+    TEST(parse_ltp_recv_subcommand);
+    TEST(parse_ltp_defaults);
+    TEST(validate_missing_local_ltp_send);
+    TEST(validate_missing_remote_ltp_send);
+    TEST(validate_missing_local_ltp_recv);
 
     printf("\n-----------------\n");
     printf("Results: %d/%d passed\n", tests_passed, tests_run);

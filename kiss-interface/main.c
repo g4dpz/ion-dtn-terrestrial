@@ -24,6 +24,7 @@
 #include "ax25.h"
 #include "serial.h"
 #include "ping.h"
+#include "ltp.h"
 
 /* ------------------------------------------------------------------ */
 /* Global signal flag                                                  */
@@ -38,7 +39,9 @@ typedef enum {
     CMD_MODE_SEND,
     CMD_MODE_RECEIVE,
     CMD_MODE_ECHO,
-    CMD_MODE_PING
+    CMD_MODE_PING,
+    CMD_MODE_LTP_SEND,
+    CMD_MODE_LTP_RECV
 } cmd_mode_t;
 
 typedef struct {
@@ -54,6 +57,11 @@ typedef struct {
     int         count;       /* Ping count (default 4) */
     int         timeout_ms;  /* Per-ping timeout in ms (default 5000) */
     int         interval_ms; /* Inter-ping delay in ms (default 1000) */
+    const char *local_eid;   /* DTN endpoint, e.g. "dtn://g4dpz-1" */
+    const char *remote_eid;  /* Remote DTN endpoint */
+    int         mtu;         /* LTP segment MTU (default 64) */
+    int         owlt_ms;     /* One-way light time (default 1500) */
+    int         retries;     /* Max retransmission attempts (default 7) */
     cmd_mode_t  mode;
 } cli_args_t;
 
@@ -69,6 +77,8 @@ void print_usage(const char *prog)
     printf("  receive   Continuously receive and display packets\n");
     printf("  echo      Receive packets and retransmit with swapped callsigns\n");
     printf("  ping      Send ping packets and measure round-trip time\n");
+    printf("  ltp-send  Send a data block reliably using LTP\n");
+    printf("  ltp-recv  Receive data blocks reliably using LTP\n");
     printf("\n");
     printf("Options:\n");
     printf("  --device <path[:baud]>  Serial device (required)\n");
@@ -80,6 +90,11 @@ void print_usage(const char *prog)
     printf("  --count <n>             Number of ping packets to send (default: 4)\n");
     printf("  --timeout <ms>          Per-ping reply timeout in milliseconds (default: 5000)\n");
     printf("  --interval <ms>         Delay between pings in milliseconds (default: 1000)\n");
+    printf("  --local <eid>           Local DTN endpoint (required for ltp-send/ltp-recv)\n");
+    printf("  --remote <eid>          Remote DTN endpoint (required for ltp-send)\n");
+    printf("  --mtu <bytes>           LTP segment MTU (default: 64)\n");
+    printf("  --owlt <ms>             One-way light time estimate (default: 1500)\n");
+    printf("  --retries <n>           Max retransmission attempts (default: 7)\n");
     printf("  --verbose               Enable verbose/debug output\n");
     printf("  --help                  Show this help message\n");
     printf("\n");
@@ -88,6 +103,8 @@ void print_usage(const char *prog)
     printf("  %s receive --device /dev/ttyACM0:9600 --verbose\n", prog);
     printf("  %s echo --device /dev/ttyACM0 --src N0CALL --dst CQ --delay 2000\n", prog);
     printf("  %s ping --device /dev/ttyACM0 --src N0CALL --dst CQ --count 10 --timeout 3000\n", prog);
+    printf("  %s ltp-send --device /dev/ttyACM0 --local dtn://g4dpz-1 --remote dtn://g4dpz-2 \"Hello\"\n", prog);
+    printf("  %s ltp-recv --device /dev/ttyACM0 --local dtn://g4dpz-2 --verbose\n", prog);
 }
 
 /* ------------------------------------------------------------------ */
@@ -140,6 +157,11 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
     args->timeout_ms = 5000;
     args->interval_ms = 1000;
     args->mode       = CMD_MODE_NONE;
+    args->local_eid  = NULL;
+    args->remote_eid = NULL;
+    args->mtu        = 64;
+    args->owlt_ms    = 1500;
+    args->retries    = 7;
 
     if (argc < 2)
         return 0;  /* No subcommand — caller will handle */
@@ -159,6 +181,10 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
         args->mode = CMD_MODE_ECHO;
     else if (strcmp(cmd, "ping") == 0)
         args->mode = CMD_MODE_PING;
+    else if (strcmp(cmd, "ltp-send") == 0)
+        args->mode = CMD_MODE_LTP_SEND;
+    else if (strcmp(cmd, "ltp-recv") == 0)
+        args->mode = CMD_MODE_LTP_RECV;
     else {
         fprintf(stderr, "error: unknown command '%s'\n", cmd);
         return -1;
@@ -175,6 +201,11 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
         { "count",    required_argument, NULL, 'c' },
         { "timeout",  required_argument, NULL, 'o' },
         { "interval", required_argument, NULL, 'i' },
+        { "local",    required_argument, NULL, 'L' },
+        { "remote",   required_argument, NULL, 'R' },
+        { "mtu",      required_argument, NULL, 'm' },
+        { "owlt",     required_argument, NULL, 'w' },
+        { "retries",  required_argument, NULL, 'r' },
         { "verbose",  no_argument,       NULL, 'v' },
         { "help",     no_argument,       NULL, 'h' },
         { NULL, 0, NULL, 0 }
@@ -184,7 +215,7 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
     optind = 2;
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "d:s:D:t:T:l:c:o:i:vh", long_opts, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "d:s:D:t:T:l:c:o:i:L:R:m:w:r:vh", long_opts, NULL)) != -1) {
         switch (opt) {
         case 'd':
             args->device = optarg;
@@ -213,6 +244,21 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
         case 'i':
             args->interval_ms = atoi(optarg);
             break;
+        case 'L':
+            args->local_eid = optarg;
+            break;
+        case 'R':
+            args->remote_eid = optarg;
+            break;
+        case 'm':
+            args->mtu = atoi(optarg);
+            break;
+        case 'w':
+            args->owlt_ms = atoi(optarg);
+            break;
+        case 'r':
+            args->retries = atoi(optarg);
+            break;
         case 'v':
             args->verbose = 1;
             break;
@@ -224,8 +270,8 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
         }
     }
 
-    /* For send mode, remaining positional arg is the payload */
-    if (args->mode == CMD_MODE_SEND && optind < argc) {
+    /* For send and ltp-send modes, remaining positional arg is the payload */
+    if ((args->mode == CMD_MODE_SEND || args->mode == CMD_MODE_LTP_SEND) && optind < argc) {
         args->payload = argv[optind];
     }
 
@@ -285,6 +331,25 @@ int validate_args(const cli_args_t *args)
         }
         if (args->timeout_ms <= 0) {
             fprintf(stderr, "error: --timeout must be greater than 0\n");
+            return -1;
+        }
+    }
+
+    /* LTP-specific validation */
+    if (args->mode == CMD_MODE_LTP_SEND || args->mode == CMD_MODE_LTP_RECV) {
+        if (!args->local_eid) {
+            fprintf(stderr, "error: --local is required for %s mode\n",
+                    args->mode == CMD_MODE_LTP_SEND ? "ltp-send" : "ltp-recv");
+            return -1;
+        }
+    }
+    if (args->mode == CMD_MODE_LTP_SEND) {
+        if (!args->remote_eid) {
+            fprintf(stderr, "error: --remote is required for ltp-send mode\n");
+            return -1;
+        }
+        if (!args->payload) {
+            fprintf(stderr, "error: payload argument is required for ltp-send mode\n");
             return -1;
         }
     }
@@ -756,6 +821,112 @@ int cmd_ping(int fd, const char *src, const char *dst,
 }
 
 /* ------------------------------------------------------------------ */
+/* cmd_ltp_send — send a data block reliably using LTP                 */
+/* Requirements: 10.3, 10.4, 10.5, 10.6                               */
+/* ------------------------------------------------------------------ */
+int cmd_ltp_send(int fd, const char *local_eid, const char *remote_eid,
+                 const char *payload, int mtu, int owlt_ms, int retries, int verbose)
+{
+    ltp_config_t cfg;
+    cfg.segment_mtu = (uint32_t)mtu;
+    cfg.owlt_ms = (uint32_t)owlt_ms;
+    cfg.max_retries = (uint32_t)retries;
+    cfg.max_block_size = LTP_MAX_BLOCK_SIZE;
+    cfg.verbose = verbose;
+
+    ltp_engine_t eng;
+    if (ltp_engine_init(&eng, local_eid, &cfg) != 0) {
+        fprintf(stderr, "error: failed to initialize LTP engine\n");
+        return -1;
+    }
+
+    size_t plen = strlen(payload);
+    if (plen > LTP_MAX_BLOCK_SIZE) {
+        fprintf(stderr, "error: payload too large (%zu bytes, max %d)\n",
+                plen, LTP_MAX_BLOCK_SIZE);
+        return -1;
+    }
+
+    printf("LTP send to %s: %zu bytes, MTU=%d, OWLT=%dms\n",
+           remote_eid, plen, mtu, owlt_ms);
+
+    struct timespec start;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
+    if (ltp_send_block(&eng, fd, remote_eid,
+                       (const uint8_t *)payload, (uint32_t)plen) != 0) {
+        fprintf(stderr, "error: failed to send block\n");
+        return -1;
+    }
+
+    int rc = ltp_engine_run(&eng, fd, 1); /* send mode */
+
+    struct timespec end;
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    double elapsed = (end.tv_sec - start.tv_sec) +
+                     (end.tv_nsec - start.tv_nsec) / 1e9;
+
+    if (rc == 0) {
+        printf("Block delivered: %zu bytes, %u segments, %.3f seconds\n",
+               plen, eng.segments_sent, elapsed);
+    } else {
+        fprintf(stderr, "error: transfer failed (%u segments sent, %u cancelled)\n",
+                eng.segments_sent, eng.sessions_cancelled);
+    }
+    return rc;
+}
+
+/* ------------------------------------------------------------------ */
+/* ltp_recv_callback — print received block with timestamp             */
+/* ------------------------------------------------------------------ */
+static void ltp_recv_callback(const uint8_t *data, uint32_t len,
+                               uint64_t remote_engine_id, void *ctx)
+{
+    (void)ctx;
+    time_t now = time(NULL);
+    struct tm *tm = localtime(&now);
+    char ts[32];
+    strftime(ts, sizeof(ts), "%H:%M:%S", tm);
+    printf("[%s] Block from engine %lu: ", ts, (unsigned long)remote_engine_id);
+    fwrite(data, 1, len, stdout);
+    printf("\n");
+    fflush(stdout);
+}
+
+/* ------------------------------------------------------------------ */
+/* cmd_ltp_recv — receive data blocks reliably using LTP               */
+/* Requirements: 11.3, 11.4, 11.5, 11.6                               */
+/* ------------------------------------------------------------------ */
+int cmd_ltp_recv(int fd, const char *local_eid,
+                 int mtu, int owlt_ms, int retries, int verbose)
+{
+    ltp_config_t cfg;
+    cfg.segment_mtu = (uint32_t)mtu;
+    cfg.owlt_ms = (uint32_t)owlt_ms;
+    cfg.max_retries = (uint32_t)retries;
+    cfg.max_block_size = LTP_MAX_BLOCK_SIZE;
+    cfg.verbose = verbose;
+
+    ltp_engine_t eng;
+    if (ltp_engine_init(&eng, local_eid, &cfg) != 0) {
+        fprintf(stderr, "error: failed to initialize LTP engine\n");
+        return -1;
+    }
+
+    eng.on_block_received = ltp_recv_callback;
+    eng.cb_ctx = NULL;
+
+    printf("LTP recv on %s (MTU=%d, OWLT=%dms)... (Ctrl-C to stop)\n",
+           local_eid, mtu, owlt_ms);
+
+    int rc = ltp_engine_run(&eng, fd, 0); /* recv mode */
+
+    printf("\nLTP recv stopped: %u blocks delivered, %u sessions cancelled\n",
+           eng.blocks_delivered, eng.sessions_cancelled);
+    return rc;
+}
+
+/* ------------------------------------------------------------------ */
 /* main — parse CLI, open serial, configure TNC, dispatch, cleanup     */
 /* Requirements: 1.1, 1.2, 1.3, 8.1, 8.5                              */
 /* ------------------------------------------------------------------ */
@@ -795,10 +966,12 @@ int main(int argc, char *argv[])
     /* Print parsed configuration in verbose mode */
     const char *mode_str = "unknown";
     switch (args.mode) {
-    case CMD_MODE_SEND:    mode_str = "send";    break;
-    case CMD_MODE_RECEIVE: mode_str = "receive"; break;
-    case CMD_MODE_ECHO:    mode_str = "echo";    break;
-    case CMD_MODE_PING:    mode_str = "ping";    break;
+    case CMD_MODE_SEND:     mode_str = "send";     break;
+    case CMD_MODE_RECEIVE:  mode_str = "receive";  break;
+    case CMD_MODE_ECHO:     mode_str = "echo";     break;
+    case CMD_MODE_PING:     mode_str = "ping";     break;
+    case CMD_MODE_LTP_SEND: mode_str = "ltp-send"; break;
+    case CMD_MODE_LTP_RECV: mode_str = "ltp-recv"; break;
     default: break;
     }
 
@@ -816,6 +989,13 @@ int main(int argc, char *argv[])
             printf("Count:    %d\n", args.count);
             printf("Timeout:  %d ms\n", args.timeout_ms);
             printf("Interval: %d ms\n", args.interval_ms);
+        }
+        if (args.mode == CMD_MODE_LTP_SEND || args.mode == CMD_MODE_LTP_RECV) {
+            if (args.local_eid) printf("Local:    %s\n", args.local_eid);
+            if (args.remote_eid) printf("Remote:   %s\n", args.remote_eid);
+            printf("MTU:      %d\n", args.mtu);
+            printf("OWLT:     %d ms\n", args.owlt_ms);
+            printf("Retries:  %d\n", args.retries);
         }
         if (args.payload) printf("Payload:  %s\n", args.payload);
     }
@@ -853,6 +1033,16 @@ int main(int argc, char *argv[])
         rc = cmd_ping(fd, args.src_call, args.dst_call,
                       args.count, args.timeout_ms, args.interval_ms,
                       args.verbose);
+        break;
+    case CMD_MODE_LTP_SEND:
+        rc = cmd_ltp_send(fd, args.local_eid, args.remote_eid,
+                          args.payload, args.mtu, args.owlt_ms,
+                          args.retries, args.verbose);
+        break;
+    case CMD_MODE_LTP_RECV:
+        rc = cmd_ltp_recv(fd, args.local_eid,
+                          args.mtu, args.owlt_ms,
+                          args.retries, args.verbose);
         break;
     default:
         fprintf(stderr, "error: unknown mode\n");

@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -std=c11
 
-SRC = main.c kiss.c ax25.c serial.c ping.c
+SRC = main.c kiss.c ax25.c serial.c ping.c ltp.c sdnv.c
 OBJ = $(SRC:.c=.o)
 
 # Detect theft library availability
@@ -25,20 +25,28 @@ test_ax25: test_ax25.c ax25.c kiss.c
 test_serial: test_serial.c serial.c kiss.c
 	$(CC) $(CFLAGS) -o $@ $^
 
-test_cli: test_cli.c main.c kiss.c ax25.c serial.c ping.c
+test_cli: test_cli.c main.c kiss.c ax25.c serial.c ping.c ltp.c sdnv.c
 	$(CC) $(CFLAGS) -DTEST_CLI_MODE -o $@ $^
 
 test_ping: test_ping.c ping.c
 	$(CC) $(CFLAGS) -o $@ $^ $(THEFT_FLAGS)
 
-test: test_kiss test_ax25 test_serial test_cli test_ping
+test_sdnv: test_sdnv.c sdnv.c
+	$(CC) $(CFLAGS) -o $@ $^ $(THEFT_FLAGS)
+
+test_ltp: test_ltp.c ltp.c sdnv.c kiss.c
+	$(CC) $(CFLAGS) -o $@ $^ $(THEFT_FLAGS)
+
+test: test_kiss test_ax25 test_serial test_cli test_ping test_sdnv test_ltp
 	./test_kiss
 	./test_ax25
 	./test_serial
 	./test_cli
 	./test_ping
+	./test_sdnv
+	./test_ltp
 
 clean:
-	rm -f kiss_interface test_kiss test_ax25 test_serial test_cli test_ping *.o
+	rm -f kiss_interface test_kiss test_ax25 test_serial test_cli test_ping test_sdnv test_ltp *.o
 
 .PHONY: test clean
