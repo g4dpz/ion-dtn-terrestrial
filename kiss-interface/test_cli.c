@@ -23,7 +23,8 @@ typedef enum {
     CMD_MODE_ECHO,
     CMD_MODE_PING,
     CMD_MODE_LTP_SEND,
-    CMD_MODE_LTP_RECV
+    CMD_MODE_LTP_RECV,
+    CMD_MODE_BEACON
 } cmd_mode_t;
 
 typedef struct {
@@ -44,6 +45,12 @@ typedef struct {
     int         mtu;
     int         owlt_ms;
     int         retries;
+    const char *beacon_callsign;
+    double      beacon_lat;
+    double      beacon_lon;
+    const char *beacon_comment;
+    int         beacon_interval;
+    int         beacon_enabled;
     cmd_mode_t  mode;
 } cli_args_t;
 
@@ -752,6 +759,73 @@ static int test_validate_missing_local_ltp_recv(void)
 }
 
 /* ================================================================== */
+/* Beacon CLI tests                                                    */
+/* ================================================================== */
+
+static int test_parse_beacon_subcommand(void)
+{
+    cli_args_t args;
+    optind = 1;
+    char *argv[] = { "kiss_interface", "beacon", "--device", "/dev/ttyACM0",
+                     "--callsign", "G4DPZ-1", "--lat", "52.467",
+                     "--lon", "-2.022", NULL };
+    int argc = 10;
+
+    if (parse_args(argc, argv, &args) != 0) {
+        printf("\n    FAIL: parse_args returned error for beacon\n");
+        return 0;
+    }
+    if (args.mode != CMD_MODE_BEACON) {
+        printf("\n    FAIL: mode = %d, expected CMD_MODE_BEACON\n", args.mode);
+        return 0;
+    }
+    if (!args.beacon_callsign || strcmp(args.beacon_callsign, "G4DPZ-1") != 0) {
+        printf("\n    FAIL: callsign mismatch\n");
+        return 0;
+    }
+    return 1;
+}
+
+static int test_parse_beacon_defaults(void)
+{
+    cli_args_t args;
+    optind = 1;
+    char *argv[] = { "kiss_interface", "beacon", "--device", "/dev/ttyACM0",
+                     "--callsign", "G4DPZ-1", "--lat", "52.467",
+                     "--lon", "-2.022", NULL };
+    int argc = 10;
+
+    if (parse_args(argc, argv, &args) != 0) {
+        printf("\n    FAIL: parse_args returned error\n");
+        return 0;
+    }
+    if (args.beacon_interval != 120) {
+        printf("\n    FAIL: beacon_interval=%d, expected 120\n", args.beacon_interval);
+        return 0;
+    }
+    if (args.beacon_comment != NULL) {
+        printf("\n    FAIL: beacon_comment should be NULL (resolved at dispatch)\n");
+        return 0;
+    }
+    return 1;
+}
+
+static int test_validate_missing_callsign_beacon(void)
+{
+    cli_args_t args;
+    memset(&args, 0, sizeof(args));
+    args.mode = CMD_MODE_BEACON;
+    args.device = "/dev/ttyUSB0";
+    /* beacon_callsign is NULL */
+
+    if (validate_args(&args) == 0) {
+        printf("\n    FAIL: validate_args should fail with missing --callsign for beacon\n");
+        return 0;
+    }
+    return 1;
+}
+
+/* ================================================================== */
 /* main                                                                */
 /* ================================================================== */
 
@@ -803,6 +877,11 @@ int main(void)
     TEST(validate_missing_local_ltp_send);
     TEST(validate_missing_remote_ltp_send);
     TEST(validate_missing_local_ltp_recv);
+
+    printf("\nBeacon subcommand (Req 6.1-6.6):\n");
+    TEST(parse_beacon_subcommand);
+    TEST(parse_beacon_defaults);
+    TEST(validate_missing_callsign_beacon);
 
     printf("\n-----------------\n");
     printf("Results: %d/%d passed\n", tests_passed, tests_run);

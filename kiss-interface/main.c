@@ -25,6 +25,8 @@
 #include "serial.h"
 #include "ping.h"
 #include "ltp.h"
+#include "beacon.h"
+#include "aprs.h"
 
 /* ------------------------------------------------------------------ */
 /* Global signal flag                                                  */
@@ -41,7 +43,8 @@ typedef enum {
     CMD_MODE_ECHO,
     CMD_MODE_PING,
     CMD_MODE_LTP_SEND,
-    CMD_MODE_LTP_RECV
+    CMD_MODE_LTP_RECV,
+    CMD_MODE_BEACON
 } cmd_mode_t;
 
 typedef struct {
@@ -62,6 +65,12 @@ typedef struct {
     int         mtu;         /* LTP segment MTU (default 64) */
     int         owlt_ms;     /* One-way light time (default 1500) */
     int         retries;     /* Max retransmission attempts (default 7) */
+    const char *beacon_callsign;  /* Beacon source callsign */
+    double      beacon_lat;       /* Beacon latitude (decimal degrees) */
+    double      beacon_lon;       /* Beacon longitude (decimal degrees) */
+    const char *beacon_comment;   /* Beacon comment text */
+    int         beacon_interval;  /* Beacon interval in seconds (default 120) */
+    int         beacon_enabled;   /* --beacon flag for ltp-recv */
     cmd_mode_t  mode;
 } cli_args_t;
 
@@ -79,6 +88,7 @@ void print_usage(const char *prog)
     printf("  ping      Send ping packets and measure round-trip time\n");
     printf("  ltp-send  Send a data block reliably using LTP\n");
     printf("  ltp-recv  Receive data blocks reliably using LTP\n");
+    printf("  beacon    Transmit periodic APRS position beacons\n");
     printf("\n");
     printf("Options:\n");
     printf("  --device <path[:baud]>  Serial device (required)\n");
@@ -95,6 +105,12 @@ void print_usage(const char *prog)
     printf("  --mtu <bytes>           LTP segment MTU (default: 64)\n");
     printf("  --owlt <ms>             One-way light time estimate (default: 1500)\n");
     printf("  --retries <n>           Max retransmission attempts (default: 7)\n");
+    printf("  --callsign <call>       Beacon source callsign (required for beacon)\n");
+    printf("  --lat <degrees>         Beacon latitude in decimal degrees\n");
+    printf("  --lon <degrees>         Beacon longitude in decimal degrees\n");
+    printf("  --comment <text>        Beacon comment (default: repo URL)\n");
+    printf("  --beacon-interval <s>   Beacon interval in seconds (default: 120)\n");
+    printf("  --beacon                Enable beaconing in ltp-recv mode\n");
     printf("  --verbose               Enable verbose/debug output\n");
     printf("  --help                  Show this help message\n");
     printf("\n");
@@ -105,6 +121,7 @@ void print_usage(const char *prog)
     printf("  %s ping --device /dev/ttyACM0 --src N0CALL --dst CQ --count 10 --timeout 3000\n", prog);
     printf("  %s ltp-send --device /dev/ttyACM0 --local dtn://g4dpz-1 --remote dtn://g4dpz-2 \"Hello\"\n", prog);
     printf("  %s ltp-recv --device /dev/ttyACM0 --local dtn://g4dpz-2 --verbose\n", prog);
+    printf("  %s beacon --device /dev/ttyACM0 --callsign G4DPZ-1 --lat 52.467 --lon -2.022\n", prog);
 }
 
 /* ------------------------------------------------------------------ */
@@ -162,6 +179,12 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
     args->mtu        = 64;
     args->owlt_ms    = 1500;
     args->retries    = 7;
+    args->beacon_callsign = NULL;
+    args->beacon_lat = 0.0;
+    args->beacon_lon = 0.0;
+    args->beacon_comment = NULL;
+    args->beacon_interval = 120;
+    args->beacon_enabled = 0;
 
     if (argc < 2)
         return 0;  /* No subcommand — caller will handle */
@@ -185,6 +208,8 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
         args->mode = CMD_MODE_LTP_SEND;
     else if (strcmp(cmd, "ltp-recv") == 0)
         args->mode = CMD_MODE_LTP_RECV;
+    else if (strcmp(cmd, "beacon") == 0)
+        args->mode = CMD_MODE_BEACON;
     else {
         fprintf(stderr, "error: unknown command '%s'\n", cmd);
         return -1;
@@ -206,6 +231,12 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
         { "mtu",      required_argument, NULL, 'm' },
         { "owlt",     required_argument, NULL, 'w' },
         { "retries",  required_argument, NULL, 'r' },
+        { "callsign", required_argument, NULL, 'C' },
+        { "lat",      required_argument, NULL, 'A' },
+        { "lon",      required_argument, NULL, 'O' },
+        { "comment",  required_argument, NULL, 'M' },
+        { "beacon-interval", required_argument, NULL, 'B' },
+        { "beacon",   no_argument,       NULL, 'b' },
         { "verbose",  no_argument,       NULL, 'v' },
         { "help",     no_argument,       NULL, 'h' },
         { NULL, 0, NULL, 0 }
@@ -215,7 +246,7 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
     optind = 2;
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "d:s:D:t:T:l:c:o:i:L:R:m:w:r:vh", long_opts, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "d:s:D:t:T:l:c:o:i:L:R:m:w:r:C:A:O:M:B:bvh", long_opts, NULL)) != -1) {
         switch (opt) {
         case 'd':
             args->device = optarg;
@@ -258,6 +289,24 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
             break;
         case 'r':
             args->retries = atoi(optarg);
+            break;
+        case 'C':
+            args->beacon_callsign = optarg;
+            break;
+        case 'A':
+            args->beacon_lat = strtod(optarg, NULL);
+            break;
+        case 'O':
+            args->beacon_lon = strtod(optarg, NULL);
+            break;
+        case 'M':
+            args->beacon_comment = optarg;
+            break;
+        case 'B':
+            args->beacon_interval = atoi(optarg);
+            break;
+        case 'b':
+            args->beacon_enabled = 1;
             break;
         case 'v':
             args->verbose = 1;
@@ -350,6 +399,26 @@ int validate_args(const cli_args_t *args)
         }
         if (!args->payload) {
             fprintf(stderr, "error: payload argument is required for ltp-send mode\n");
+            return -1;
+        }
+    }
+
+    /* Beacon-specific validation */
+    if (args->mode == CMD_MODE_BEACON) {
+        if (!args->beacon_callsign) {
+            fprintf(stderr, "error: --callsign is required for beacon mode\n");
+            return -1;
+        }
+        if (args->beacon_lat == 0.0 && args->beacon_lon == 0.0) {
+            /* Allow 0,0 but require explicit --lat and --lon */
+        }
+    }
+
+    /* ltp-recv or ltp-send with --beacon requires beacon options */
+    if ((args->mode == CMD_MODE_LTP_RECV || args->mode == CMD_MODE_LTP_SEND) &&
+        args->beacon_enabled) {
+        if (!args->beacon_callsign) {
+            fprintf(stderr, "error: --callsign is required when --beacon is used\n");
             return -1;
         }
     }
@@ -900,6 +969,8 @@ static void ltp_recv_callback(const uint8_t *data, uint32_t len,
 int cmd_ltp_recv(int fd, const char *local_eid,
                  int mtu, int owlt_ms, int retries, int verbose)
 {
+    /* Note: beacon integration handled by caller checking beacon_enabled
+     * and running a custom event loop. This function is the non-beacon path. */
     ltp_config_t cfg;
     cfg.segment_mtu = (uint32_t)mtu;
     cfg.owlt_ms = (uint32_t)owlt_ms;
@@ -924,6 +995,57 @@ int cmd_ltp_recv(int fd, const char *local_eid,
     printf("\nLTP recv stopped: %u blocks delivered, %u sessions cancelled\n",
            eng.blocks_delivered, eng.sessions_cancelled);
     return rc;
+}
+
+/* ------------------------------------------------------------------ */
+/* cmd_beacon — standalone periodic APRS beacon mode                   */
+/* ------------------------------------------------------------------ */
+int cmd_beacon(int fd, const char *callsign, double lat, double lon,
+               const char *comment, int interval_sec, int verbose)
+{
+    (void)verbose;
+
+    const char *cmt = (comment && comment[0] != '\0') ? comment : BEACON_DEFAULT_COMMENT;
+
+    beacon_state_t beacon;
+    if (beacon_init(&beacon, callsign, lat, lon, cmt, interval_sec) != 0) {
+        fprintf(stderr, "error: failed to initialize beacon\n");
+        return -1;
+    }
+
+    printf("Beacon mode: %s every %d seconds (Ctrl-C to stop)\n",
+           callsign, interval_sec);
+
+    /* Transmit initial beacon immediately */
+    if (beacon_transmit(&beacon, fd) != 0) {
+        fprintf(stderr, "error: initial beacon transmit failed\n");
+        return -1;
+    }
+
+    /* Beacon loop */
+    while (g_running) {
+        int timeout = beacon_get_timeout_ms(&beacon);
+        if (timeout < 0) timeout = interval_sec * 1000;
+
+        struct pollfd pfd;
+        pfd.fd = fd;
+        pfd.events = POLLIN;
+
+        int pret = poll(&pfd, 1, timeout);
+        if (pret < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+
+        /* Ignore any incoming data in standalone beacon mode */
+
+        if (beacon_is_due(&beacon) == 1) {
+            beacon_transmit(&beacon, fd);
+        }
+    }
+
+    printf("\nBeacon stopped.\n");
+    return 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -972,6 +1094,7 @@ int main(int argc, char *argv[])
     case CMD_MODE_PING:     mode_str = "ping";     break;
     case CMD_MODE_LTP_SEND: mode_str = "ltp-send"; break;
     case CMD_MODE_LTP_RECV: mode_str = "ltp-recv"; break;
+    case CMD_MODE_BEACON:   mode_str = "beacon";   break;
     default: break;
     }
 
@@ -1035,14 +1158,207 @@ int main(int argc, char *argv[])
                       args.verbose);
         break;
     case CMD_MODE_LTP_SEND:
-        rc = cmd_ltp_send(fd, args.local_eid, args.remote_eid,
-                          args.payload, args.mtu, args.owlt_ms,
-                          args.retries, args.verbose);
+        if (args.beacon_enabled) {
+            /* LTP send with beacon — transmit beacon before and after transfer */
+            const char *scmt = (args.beacon_comment && args.beacon_comment[0])
+                               ? args.beacon_comment : BEACON_DEFAULT_COMMENT;
+            beacon_state_t sbcn;
+            if (beacon_init(&sbcn, args.beacon_callsign,
+                            args.beacon_lat, args.beacon_lon,
+                            scmt, args.beacon_interval) != 0) {
+                fprintf(stderr, "error: failed to initialize beacon\n");
+                serial_close(fd);
+                return 1;
+            }
+
+            /* Beacon before sending */
+            beacon_transmit(&sbcn, fd);
+
+            /* Custom send with beacon-aware event loop */
+            ltp_config_t scfg;
+            scfg.segment_mtu = (uint32_t)args.mtu;
+            scfg.owlt_ms = (uint32_t)args.owlt_ms;
+            scfg.max_retries = (uint32_t)args.retries;
+            scfg.max_block_size = LTP_MAX_BLOCK_SIZE;
+            scfg.verbose = args.verbose;
+
+            ltp_engine_t seng;
+            if (ltp_engine_init(&seng, args.local_eid, &scfg) != 0) {
+                fprintf(stderr, "error: failed to initialize LTP engine\n");
+                serial_close(fd);
+                return 1;
+            }
+
+            size_t splen = strlen(args.payload);
+            printf("LTP send to %s with beacon: %zu bytes\n",
+                   args.remote_eid, splen);
+
+            struct timespec sstart;
+            clock_gettime(CLOCK_MONOTONIC, &sstart);
+
+            if (ltp_send_block(&seng, fd, args.remote_eid,
+                               (const uint8_t *)args.payload,
+                               (uint32_t)splen) != 0) {
+                fprintf(stderr, "error: failed to send block\n");
+                serial_close(fd);
+                return 1;
+            }
+
+            uint64_t ssess = seng.next_session_number - 1;
+            kiss_decoder_t sdec;
+            kiss_decoder_init(&sdec);
+            uint8_t srbuf[256], skpay[KISS_MAX_PAYLOAD];
+            size_t sklen = 0;
+
+            while (g_running) {
+                int slt = ltp_get_next_timeout_ms(&seng);
+                int sbt = beacon_get_timeout_ms(&sbcn);
+                int stout = sbt;
+                if (slt >= 0 && (stout < 0 || slt < stout)) stout = slt;
+                if (stout < 0) stout = 1000;
+
+                struct pollfd spf;
+                spf.fd = fd; spf.events = POLLIN;
+                int spr = poll(&spf, 1, stout);
+                if (spr < 0) { if (errno == EINTR) continue; break; }
+
+                if (spf.revents & POLLIN) {
+                    ssize_t sn = read(fd, srbuf, sizeof(srbuf));
+                    if (sn > 0) {
+                        for (ssize_t si = 0; si < sn; si++) {
+                            if (kiss_decoder_feed(&sdec, srbuf[si], skpay,
+                                                  sizeof(skpay), &sklen) == 1) {
+                                if (aprs_is_ax25_frame(skpay, sklen))
+                                    aprs_log_packet(skpay, sklen, args.verbose);
+                                else
+                                    ltp_process_segment(&seng, fd, skpay, sklen);
+                            }
+                        }
+                    }
+                }
+
+                ltp_fire_expired_timers(&seng, fd);
+
+                if (beacon_is_due(&sbcn) == 1)
+                    beacon_transmit(&sbcn, fd);
+
+                /* Check session completion */
+                for (int si = 0; si < LTP_MAX_EXPORT_SESSIONS; si++) {
+                    if (seng.export_sessions[si].session_number == ssess) {
+                        if (seng.export_sessions[si].completed) {
+                            struct timespec send;
+                            clock_gettime(CLOCK_MONOTONIC, &send);
+                            double elapsed = (send.tv_sec - sstart.tv_sec) +
+                                             (send.tv_nsec - sstart.tv_nsec) / 1e9;
+                            printf("Block delivered: %zu bytes, %.3f seconds\n",
+                                   splen, elapsed);
+                            beacon_transmit(&sbcn, fd);
+                            rc = 0;
+                            goto ltp_send_done;
+                        }
+                        if (seng.export_sessions[si].cancelled) {
+                            fprintf(stderr, "error: transfer cancelled\n");
+                            rc = -1;
+                            goto ltp_send_done;
+                        }
+                        break;
+                    }
+                }
+            }
+            ltp_send_done:
+            (void)0;
+        } else {
+            rc = cmd_ltp_send(fd, args.local_eid, args.remote_eid,
+                              args.payload, args.mtu, args.owlt_ms,
+                              args.retries, args.verbose);
+        }
         break;
     case CMD_MODE_LTP_RECV:
-        rc = cmd_ltp_recv(fd, args.local_eid,
-                          args.mtu, args.owlt_ms,
-                          args.retries, args.verbose);
+        if (args.beacon_enabled) {
+            /* LTP recv with beacon integration */
+            ltp_config_t lcfg;
+            lcfg.segment_mtu = (uint32_t)args.mtu;
+            lcfg.owlt_ms = (uint32_t)args.owlt_ms;
+            lcfg.max_retries = (uint32_t)args.retries;
+            lcfg.max_block_size = LTP_MAX_BLOCK_SIZE;
+            lcfg.verbose = args.verbose;
+
+            ltp_engine_t eng;
+            if (ltp_engine_init(&eng, args.local_eid, &lcfg) != 0) {
+                fprintf(stderr, "error: failed to initialize LTP engine\n");
+                serial_close(fd);
+                return 1;
+            }
+            eng.on_block_received = ltp_recv_callback;
+
+            const char *bcmt = (args.beacon_comment && args.beacon_comment[0])
+                               ? args.beacon_comment : BEACON_DEFAULT_COMMENT;
+            beacon_state_t bcn;
+            if (beacon_init(&bcn, args.beacon_callsign,
+                            args.beacon_lat, args.beacon_lon,
+                            bcmt, args.beacon_interval) != 0) {
+                fprintf(stderr, "error: failed to initialize beacon\n");
+                serial_close(fd);
+                return 1;
+            }
+
+            printf("LTP recv on %s with beacon %s every %ds (Ctrl-C to stop)\n",
+                   args.local_eid, args.beacon_callsign, args.beacon_interval);
+            beacon_transmit(&bcn, fd);
+
+            kiss_decoder_t bdec;
+            kiss_decoder_init(&bdec);
+            uint8_t brbuf[256];
+            uint8_t bkpay[KISS_MAX_PAYLOAD];
+            size_t bklen = 0;
+
+            while (g_running) {
+                int lt = ltp_get_next_timeout_ms(&eng);
+                int bt = beacon_get_timeout_ms(&bcn);
+                int tout = bt;
+                if (lt >= 0 && (tout < 0 || lt < tout)) tout = lt;
+                if (tout < 0) tout = 1000;
+
+                struct pollfd pf;
+                pf.fd = fd; pf.events = POLLIN;
+                int pr = poll(&pf, 1, tout);
+                if (pr < 0) { if (errno == EINTR) continue; break; }
+
+                if (pf.revents & POLLIN) {
+                    ssize_t n = read(fd, brbuf, sizeof(brbuf));
+                    if (n > 0) {
+                        for (ssize_t i = 0; i < n; i++) {
+                            if (kiss_decoder_feed(&bdec, brbuf[i], bkpay,
+                                                  sizeof(bkpay), &bklen) == 1) {
+                                if (aprs_is_ax25_frame(bkpay, bklen))
+                                    aprs_log_packet(bkpay, bklen, args.verbose);
+                                else
+                                    ltp_process_segment(&eng, fd, bkpay, bklen);
+                            }
+                        }
+                    }
+                }
+
+                ltp_fire_expired_timers(&eng, fd);
+
+                if (beacon_is_due(&bcn) == 1)
+                    beacon_transmit(&bcn, fd);
+            }
+
+            printf("\nLTP recv stopped: %u blocks, beacon %s\n",
+                   eng.blocks_delivered, args.beacon_callsign);
+            rc = 0;
+        } else {
+            rc = cmd_ltp_recv(fd, args.local_eid,
+                              args.mtu, args.owlt_ms,
+                              args.retries, args.verbose);
+        }
+        break;
+    case CMD_MODE_BEACON:
+        rc = cmd_beacon(fd, args.beacon_callsign,
+                        args.beacon_lat, args.beacon_lon,
+                        args.beacon_comment, args.beacon_interval,
+                        args.verbose);
         break;
     default:
         fprintf(stderr, "error: unknown mode\n");

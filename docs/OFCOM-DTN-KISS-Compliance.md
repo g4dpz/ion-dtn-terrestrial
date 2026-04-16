@@ -6,7 +6,7 @@ AMSAT-UK proposes to conduct experimental transmissions using Delay-Tolerant Net
 
 The system uses standard amateur radio equipment (Yaesu FT-817 transceivers and Mobilinkd TNC3 terminal node controllers) operating within OFCOM-permitted frequency bands and power levels. The software is open-source and implements two protocol modes: a conventional AX.25 packet mode and a Licklider Transmission Protocol (LTP) mode that provides reliable data transfer with acknowledgment and retransmission.
 
-Station identification is maintained at all times in compliance with the OFCOM Amateur Radio Licence (2024 edition). In AX.25 mode, the operator's callsign is embedded in every transmitted frame. In LTP mode, DTN endpoint identifiers containing the operator's callsign (e.g. dtn://g4dpz-1) are used for addressing, supplemented by periodic AX.25 identification beacons to ensure the station remains identifiable to conventional monitoring equipment.
+Station identification is maintained at all times in compliance with the OFCOM Amateur Radio Licence (2024 edition). In AX.25 mode, the operator's callsign is embedded in every transmitted frame. In LTP mode, DTN endpoint identifiers containing the operator's callsign (e.g. dtn://g4dpz-1) are used for addressing, supplemented by periodic APRS position beacons every 2 minutes containing the operator's callsign in the AX.25 source address, ensuring the station remains identifiable to both conventional packet radio and APRS monitoring equipment.
 
 All transmissions are conducted for the purposes of self-training and technical investigation, in accordance with the terms of the amateur radio licence and ITU Radio Regulations Article 25.
 
@@ -100,7 +100,28 @@ dtn://g4dpz-1
 
 The callsign is mapped to a numeric Engine ID using a deterministic hash function. The mapping between DTN endpoint identifier and Engine ID is maintained by both communicating stations, ensuring that any received LTP segment can be traced back to the originating callsign.
 
-Additionally, the system will implement periodic AX.25 identification beacons during LTP sessions. At configurable intervals (default: every 10 minutes), the system will transmit a standard AX.25 UI frame containing the operator's callsign, ensuring that the station remains identifiable to any monitoring station using conventional packet radio equipment. This hybrid approach satisfies the OFCOM requirement that the station be "clearly identifiable at all times" while allowing the use of the more efficient LTP protocol for data transfer.
+Additionally, the system implements periodic APRS position beacons during LTP sessions. At configurable intervals (default: every 2 minutes), the system transmits a standard AX.25 UI frame containing the operator's callsign as the source address, the APRS experimental TOCALL "APZ001" as the destination, and an APRS-formatted position report in the information field. For example:
+
+```
+!5228.02N/00201.32W-github.com/g4dpz/ion-dtn-terrestrial
+```
+
+These beacons are transmitted during idle periods when no LTP data segments are in-flight, respecting the half-duplex constraint of the radio link. The beacon is deferred by no more than 10 seconds if an LTP exchange is in progress, ensuring the station remains identifiable within the configured interval.
+
+This APRS beacon approach provides three compliance benefits:
+1. The operator's callsign appears in the AX.25 source address of every beacon, satisfying the OFCOM requirement that the station be "clearly identifiable at all times"
+2. The beacon is decodable by any standard APRS monitoring software (e.g. direwolf, Xastir, APRS-IS), making the station visible to the wider amateur radio community
+3. The beacon interval of 2 minutes exceeds the identification frequency that would be considered "as frequently as practicable" for a data station
+
+The beacon can also be run as a standalone mode without LTP:
+```
+./kiss_interface beacon --device /dev/ttyACM0 --callsign G4DPZ-1 --lat 52.467 --lon -2.022
+```
+
+Or integrated with LTP receive mode:
+```
+./kiss_interface ltp-recv --device /dev/ttyACM0 --local dtn://g4dpz-2 --beacon --callsign G4DPZ-2 --lat 52.467 --lon -2.022
+```
 
 The CLI requires the operator to specify their DTN endpoint (which contains their callsign):
 ```
@@ -113,7 +134,8 @@ The CLI requires the operator to specify their DTN endpoint (which contains thei
 |------|----------------------|-----------|
 | AX.25 send/receive/echo | Callsign in every AX.25 frame header | Every packet |
 | AX.25 ping | Callsign in every AX.25 frame header | Every ping/reply |
-| LTP send/receive | DTN endpoint ID containing callsign + periodic AX.25 beacon | Every session + periodic beacon |
+| LTP send/receive | DTN endpoint ID containing callsign + periodic APRS beacon | Every session + every 2 minutes |
+| Standalone beacon | Callsign in AX.25 source address + APRS position report | Every 2 minutes (configurable) |
 
 ## Purpose of the Experiment
 
