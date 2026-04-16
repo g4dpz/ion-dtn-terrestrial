@@ -3,6 +3,12 @@ ION-DTN
 
 # Compiled binaries
 opt/ion-demo/cla/ionserialcla
+kiss-interface/kiss_interface
+kiss-interface/test_kiss
+kiss-interface/test_ax25
+kiss-interface/test_serial
+kiss-interface/test_cli
+kiss-interface/test_ping
 *.o
 *.dSYM/
 
