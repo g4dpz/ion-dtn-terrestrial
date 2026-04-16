@@ -34,8 +34,8 @@ test_ping: test_ping.c ping.c
 test_sdnv: test_sdnv.c sdnv.c
 	$(CC) $(CFLAGS) -o $@ $^ $(THEFT_FLAGS)
 
-test_ltp: test_ltp.c ltp.c sdnv.c kiss.c
-	$(CC) $(CFLAGS) -o $@ $^ $(THEFT_FLAGS)
+test_ltp: test_ltp.c ltp.c sdnv.c kiss.c aprs.c ax25.c
+	$(CC) $(CFLAGS) -o $@ $^ $(THEFT_FLAGS) -lm
 
 test_beacon: test_beacon.c beacon.c ax25.c kiss.c
 	$(CC) $(CFLAGS) -o $@ $^ $(THEFT_FLAGS) -lm

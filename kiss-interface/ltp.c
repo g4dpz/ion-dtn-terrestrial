@@ -13,6 +13,7 @@
 #include "ltp.h"
 #include "sdnv.h"
 #include "kiss.h"
+#include "aprs.h"
 #include <string.h>
 #include <unistd.h>
 #include <termios.h>
@@ -1553,7 +1554,11 @@ int ltp_engine_run(ltp_engine_t *eng, int fd, int send_mode)
                                            kiss_payload, sizeof(kiss_payload),
                                            &kiss_payload_len);
                 if (rc == 1) {
-                    ltp_process_segment(eng, fd, kiss_payload, kiss_payload_len);
+                    if (aprs_is_ax25_frame(kiss_payload, kiss_payload_len))
+                        aprs_log_packet(kiss_payload, kiss_payload_len,
+                                        eng->config.verbose);
+                    else
+                        ltp_process_segment(eng, fd, kiss_payload, kiss_payload_len);
                 }
             }
         }
