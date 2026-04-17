@@ -98,6 +98,7 @@ int bp_eid_decode(const uint8_t *buf, size_t len, bp_eid_t *eid)
 
 static int encode_primary(const bp_eid_t *src, const bp_eid_t *dst,
                           uint64_t flags, uint64_t lifetime_ms, uint64_t seq,
+                          uint64_t creation_time,
                           uint64_t frag_offset, uint64_t total_adu,
                           uint8_t *out, size_t out_size)
 {
@@ -142,7 +143,7 @@ static int encode_primary(const bp_eid_t *src, const bp_eid_t *dst,
     /* creation timestamp [time, seq] */
     n = cbor_encode_array(2, out + pos, out_size - pos);
     if (n < 0) return -1; pos += (size_t)n;
-    n = cbor_encode_uint(bp_dtn_time_now(), out + pos, out_size - pos);
+    n = cbor_encode_uint(creation_time, out + pos, out_size - pos);
     if (n < 0) return -1; pos += (size_t)n;
     n = cbor_encode_uint(seq, out + pos, out_size - pos);
     if (n < 0) return -1; pos += (size_t)n;
@@ -212,7 +213,7 @@ int bp_encode_bundle(const bp_eid_t *src, const bp_eid_t *dst,
     n = cbor_encode_indef_array_start(out + pos, out_size - pos);
     if (n < 0) return -1; pos += (size_t)n;
 
-    n = encode_primary(src, dst, 0, lifetime_ms, seq, 0, 0, out + pos, out_size - pos);
+    n = encode_primary(src, dst, 0, lifetime_ms, seq, bp_dtn_time_now(), 0, 0, out + pos, out_size - pos);
     if (n < 0) return -1; pos += (size_t)n;
 
     n = encode_payload_block(payload, payload_len, out + pos, out_size - pos);
@@ -228,6 +229,7 @@ int bp_encode_fragment(const bp_eid_t *src, const bp_eid_t *dst,
                        const uint8_t *payload, size_t payload_len,
                        uint64_t lifetime_ms, uint64_t seq,
                        uint64_t fragment_offset, uint64_t total_adu_len,
+                       uint64_t creation_time,
                        uint8_t *out, size_t out_size)
 {
     size_t pos = 0;
@@ -237,6 +239,7 @@ int bp_encode_fragment(const bp_eid_t *src, const bp_eid_t *dst,
     if (n < 0) return -1; pos += (size_t)n;
 
     n = encode_primary(src, dst, BP_FLAG_FRAGMENT, lifetime_ms, seq,
+                       creation_time,
                        fragment_offset, total_adu_len, out + pos, out_size - pos);
     if (n < 0) return -1; pos += (size_t)n;
 

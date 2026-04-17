@@ -64,6 +64,7 @@ int bp_encode_fragment(const bp_eid_t *src, const bp_eid_t *dst,
                        const uint8_t *payload, size_t payload_len,
                        uint64_t lifetime_ms, uint64_t seq,
                        uint64_t fragment_offset, uint64_t total_adu_len,
+                       uint64_t creation_time,
                        uint8_t *out, size_t out_size);
 
 int bp_decode_bundle(const uint8_t *buf, size_t len, bp_bundle_t *bundle);

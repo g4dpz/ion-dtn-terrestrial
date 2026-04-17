@@ -1274,6 +1274,8 @@ int cmd_bp_send(int fd, const char *local_eid, const char *remote_eid,
     ltp_engine_t eng;
     ltp_engine_init(&eng, local_eid, &cfg);
 
+    uint64_t frag_creation_time = bp_dtn_time_now();
+
     for (int f = 0; f < nfrags; f++) {
         uint64_t off = (uint64_t)f * BP_DEFAULT_FRAGMENT_SIZE;
         size_t flen = payload_len - (size_t)off;
@@ -1282,6 +1284,7 @@ int cmd_bp_send(int fd, const char *local_eid, const char *remote_eid,
         uint8_t fbuf[BP_MAX_BUNDLE_BUF];
         int fenc = bp_encode_fragment(&src, &dst, payload + off, flen,
                                       lifetime_ms, bp_seq, off, (uint64_t)payload_len,
+                                      frag_creation_time,
                                       fbuf, sizeof(fbuf));
         if (fenc < 0) {
             fprintf(stderr, "error: fragment %d encode failed\n", f);

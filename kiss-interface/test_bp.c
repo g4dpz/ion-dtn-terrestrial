@@ -182,6 +182,7 @@ static int test_fragment_reassembly_roundtrip(void)
         }
 
         int complete = 0;
+        uint64_t ct = bp_dtn_time_now();
         for (int fi = 0; fi < nfrags; fi++) {
             int f = order[fi];
             uint64_t off = (uint64_t)f * BP_DEFAULT_FRAGMENT_SIZE;
@@ -191,7 +192,7 @@ static int test_fragment_reassembly_roundtrip(void)
             uint8_t fbuf[BP_MAX_BUNDLE_BUF];
             int enc = bp_encode_fragment(&src, &dst, payload + off, flen,
                                          lifetime, seq, off, (uint64_t)plen,
-                                         fbuf, sizeof(fbuf));
+                                         ct, fbuf, sizeof(fbuf));
             if (enc < 0) { free(payload); printf("\n    FAIL encode frag %d\n", f); return 0; }
 
             bp_bundle_t b;
@@ -218,7 +219,7 @@ static int test_fragment_reassembly_roundtrip(void)
 /* Unit: 4000-byte payload → 5 fragments */
 static int test_fragment_4000_bytes(void)
 {
-    if (bp_fragment_count(4000, 900) != 5) { printf("\n    FAIL: count\n"); return 0; }
+    if (bp_fragment_count(4000, 800) != 5) { printf("\n    FAIL: count\n"); return 0; }
 
     uint8_t payload[4000];
     rand_bytes(payload, 4000);
@@ -227,15 +228,16 @@ static int test_fragment_4000_bytes(void)
     bp_reassembly_t reasm;
     bp_reassembly_init(&reasm);
 
+    uint64_t ct = bp_dtn_time_now();
     for (int f = 0; f < 5; f++) {
-        size_t off = (size_t)f * 900;
+        size_t off = (size_t)f * 800;
         size_t flen = 4000 - off;
-        if (flen > 900) flen = 900;
+        if (flen > 800) flen = 800;
 
         uint8_t fbuf[BP_MAX_BUNDLE_BUF];
         int enc = bp_encode_fragment(&src, &dst, payload + off, flen,
                                      3600000, 1, (uint64_t)off, 4000,
-                                     fbuf, sizeof(fbuf));
+                                     ct, fbuf, sizeof(fbuf));
         if (enc < 0) { printf("\n    FAIL encode %d\n", f); return 0; }
 
         bp_bundle_t b;
@@ -262,12 +264,12 @@ static int test_shuffled_reassembly(void)
     rand_bytes(payload, 2700);
     bp_eid_t src = { "dtn://a" }, dst = { "dtn://b" };
 
-    /* 3 fragments: 0-899, 900-1799, 1800-2699 */
-    /* Send in reverse order */
+    /* 3 fragments at 900 bytes each (using 900 for this specific test) */
     int order[] = { 2, 0, 1 };
     bp_reassembly_t reasm;
     bp_reassembly_init(&reasm);
 
+    uint64_t ct = bp_dtn_time_now();
     for (int i = 0; i < 3; i++) {
         int f = order[i];
         size_t off = (size_t)f * 900;
@@ -277,7 +279,7 @@ static int test_shuffled_reassembly(void)
         uint8_t fbuf[BP_MAX_BUNDLE_BUF];
         int enc = bp_encode_fragment(&src, &dst, payload + off, flen,
                                      3600000, 1, (uint64_t)off, 2700,
-                                     fbuf, sizeof(fbuf));
+                                     ct, fbuf, sizeof(fbuf));
         if (enc < 0) return 0;
 
         bp_bundle_t b;
