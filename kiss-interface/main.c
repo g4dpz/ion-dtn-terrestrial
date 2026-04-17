@@ -1271,6 +1271,9 @@ int cmd_bp_send(int fd, const char *local_eid, const char *remote_eid,
 
     printf("BP send to %s: %zu bytes, %d fragments\n", remote_eid, payload_len, nfrags);
 
+    ltp_engine_t eng;
+    ltp_engine_init(&eng, local_eid, &cfg);
+
     for (int f = 0; f < nfrags; f++) {
         uint64_t off = (uint64_t)f * BP_DEFAULT_FRAGMENT_SIZE;
         size_t flen = payload_len - (size_t)off;
@@ -1288,8 +1291,6 @@ int cmd_bp_send(int fd, const char *local_eid, const char *remote_eid,
         printf("  Fragment %d/%d: offset=%lu, len=%zu\n", f + 1, nfrags,
                (unsigned long)off, flen);
 
-        ltp_engine_t eng;
-        ltp_engine_init(&eng, local_eid, &cfg);
         if (ltp_send_block(&eng, fd, remote_eid, fbuf, (uint32_t)fenc) != 0) {
             fprintf(stderr, "error: LTP send failed for fragment %d\n", f);
             return -1;
