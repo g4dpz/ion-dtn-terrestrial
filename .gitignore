@@ -1,6 +1,9 @@
 # ION-DTN symlink (external dependency)
 ION-DTN
 
+# Kiro IDE
+.kiro/
+
 # Compiled binaries
 opt/ion-demo/cla/ionserialcla
 kiss-interface/kiss_interface
@@ -13,6 +16,8 @@ kiss-interface/test_sdnv
 kiss-interface/test_ltp
 kiss-interface/test_beacon
 kiss-interface/test_aprs
+kiss-interface/test_cbor
+kiss-interface/test_bp
 *.o
 *.dSYM/
 

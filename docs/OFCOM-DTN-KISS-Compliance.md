@@ -2,11 +2,11 @@
 
 ## Executive Summary
 
-AMSAT-UK proposes to conduct experimental transmissions using Delay-Tolerant Networking (DTN) protocols over standard 1200 baud VHF amateur packet radio links. DTN is a suite of networking protocols developed by NASA and the IETF for reliable communications over links with long delays and intermittent connectivity, such as deep-space and satellite links. AMSAT-UK seeks to evaluate these protocols on terrestrial amateur radio as a stepping stone toward their use on future amateur satellite missions.
+AMSAT-UK proposes to conduct experimental transmissions using Delay-Tolerant Networking (DTN) protocols over standard 1200 baud VHF amateur packet radio links. DTN is a suite of networking protocols developed by NASA and the IETF for reliable communications over links with long delays and intermittent connectivity, such as deep-space and satellite links. NASA's reference implementation, Interplanetary Overlay Network (ION), has been deployed on the International Space Station and deep-space missions. AMSAT-UK seeks to evaluate these protocols on terrestrial amateur radio as a stepping stone toward their use on future amateur satellite missions.
 
-The system uses standard amateur radio equipment (Yaesu FT-817 transceivers and Mobilinkd TNC3 terminal node controllers) operating within OFCOM-permitted frequency bands and power levels. The software is open-source and implements two protocol modes: a conventional AX.25 packet mode and a Licklider Transmission Protocol (LTP) mode that provides reliable data transfer with acknowledgment and retransmission.
+The system uses standard amateur radio equipment (Yaesu FT-817 transceivers and Mobilinkd TNC3 terminal node controllers) operating within OFCOM-permitted frequency bands and power levels. The software is open-source (available at [https://github.com/g4dpz/ion-dtn-terrestrial](https://github.com/g4dpz/ion-dtn-terrestrial)) and implements a full DTN protocol stack: conventional AX.25 packet radio, Licklider Transmission Protocol (LTP) for reliable data transfer with acknowledgment and retransmission, and Bundle Protocol version 7 (BPv7) for DTN bundle encoding with fragmentation and reassembly. The system has been successfully tested over the air, including bit-perfect transfer of binary files using BPv7 fragmentation over LTP over 1200 baud VHF.
 
-Station identification is maintained at all times in compliance with the OFCOM Amateur Radio Licence (2024 edition). In AX.25 mode, the operator's callsign is embedded in every transmitted frame. In LTP mode, DTN endpoint identifiers containing the operator's callsign (e.g. dtn://g4dpz-1) are used for addressing, supplemented by periodic APRS position beacons every 2 minutes containing the operator's callsign in the AX.25 source address, ensuring the station remains identifiable to both conventional packet radio and APRS monitoring equipment.
+Station identification is maintained at all times in compliance with the OFCOM Amateur Radio Licence (2024 edition). In AX.25 mode, the operator's callsign is embedded in every transmitted frame. In LTP and BPv7 modes, DTN endpoint identifiers containing the operator's callsign (e.g. dtn://g4dpz-1) are used for addressing, supplemented by periodic APRS position beacons containing the operator's callsign in the AX.25 source address, ensuring the station remains identifiable to both conventional packet radio and APRS monitoring equipment.
 
 All transmissions are conducted for the purposes of self-training and technical investigation, in accordance with the terms of the amateur radio licence and ITU Radio Regulations Article 25.
 
@@ -16,7 +16,7 @@ This document is a proposal from AMSAT-UK describing an experimental amateur rad
 
 ## Proposing Organisation
 
-AMSAT-UK is the Radio Amateur Satellite Corporation of the United Kingdom, a registered charity and membership organisation dedicated to the advancement of amateur radio satellite communications, education, and technical research. AMSAT-UK members have a long history of designing, building, and operating amateur radio satellites and ground station systems, and of working constructively with OFCOM on spectrum matters relating to the amateur satellite service.
+AMSAT-UK is a registered charity and membership organisation dedicated to the advancement of amateur radio satellite communications, education, and technical research. AMSAT-UK members have a long history of designing, building, and operating amateur radio satellites and ground station systems, and of working constructively with OFCOM on spectrum matters relating to the amateur satellite service.
 
 This proposal arises from AMSAT-UK's interest in applying Delay-Tolerant Networking techniques — originally developed for space communications — to terrestrial amateur radio links, with the goal of building practical experience and tools that can be applied to future amateur satellite missions.
 
@@ -28,8 +28,10 @@ The protocol stack, from lowest to highest layer:
 
 1. RF physical layer: 1200 baud AFSK on VHF amateur bands
 2. KISS framing: host-to-TNC serial protocol for packet delineation
-3. AX.25 UI frames (current) / LTP segments (planned): data link / transport
-4. Application data: user messages, ping payloads, or DTN bundles
+3. AX.25 UI frames: standard amateur packet radio addressing and APRS beacons
+4. LTP (Licklider Transmission Protocol): reliable data transfer with checkpoint/report acknowledgment
+5. BPv7 (Bundle Protocol version 7): DTN bundle encoding with CBOR serialisation, fragmentation, and reassembly
+6. Application data: user messages, ping payloads, or file transfers
 
 ## Applicable Regulations and Standards
 
@@ -61,6 +63,10 @@ The protocol stack, from lowest to highest layer:
 
 - CCSDS 734.1-B-1: "Licklider Transmission Protocol (LTP) for CCSDS." The Consultative Committee for Space Data Systems standard for LTP, used by NASA and ESA for deep-space communications. ([Source: CCSDS](https://public.ccsds.org/Pubs/734x1b1.pdf))
 
+### Reference Implementations
+
+- ION (Interplanetary Overlay Network): NASA/JPL's reference implementation of DTN protocols, including BP and LTP. ION is deployed on the International Space Station and has been used on deep-space missions including DINET (Deep Impact Network Experiment). ION is open-source and maintained by NASA/JPL. ([Source: NASA/JPL](https://sourceforge.net/projects/ion-dtn/))
+
 ## Station Identification Compliance
 
 ### OFCOM Licence Requirement
@@ -88,9 +94,9 @@ The system's CLI requires the operator to specify their callsign explicitly:
 ./kiss_interface send --device /dev/ttyACM0 --src G4DPZ-1 --dst G4DPZ-2 "message"
 ```
 
-#### Planned Implementation (LTP over KISS Mode)
+#### LTP over KISS Mode (Implemented)
 
-In the planned LTP-over-KISS implementation, the AX.25 framing layer is replaced by LTP segments encapsulated directly in KISS frames. LTP uses numeric Engine IDs rather than callsign strings in its segment headers.
+In the LTP-over-KISS implementation, the AX.25 framing layer is replaced by LTP segments encapsulated directly in KISS frames. LTP uses numeric Engine IDs rather than callsign strings in its segment headers.
 
 To maintain compliance with OFCOM identification requirements, the system uses DTN endpoint identifiers that embed the operator's callsign:
 
@@ -123,6 +129,23 @@ Or integrated with LTP receive mode:
 ./kiss_interface ltp-recv --device /dev/ttyACM0 --local dtn://g4dpz-2 --beacon --callsign G4DPZ-2 --lat 52.467 --lon -2.022
 ```
 
+#### BPv7 over LTP Mode (Implemented)
+
+The Bundle Protocol version 7 (BPv7) layer sits above LTP, providing DTN bundle encoding with CBOR serialisation, fragmentation, and reassembly. BPv7 bundles use DTN endpoint identifiers (e.g. `dtn://g4dpz-1`) for source and destination addressing, with the operator's callsign embedded in the endpoint URI.
+
+For payloads larger than 800 bytes, the system automatically fragments the bundle into multiple BPv7 fragments, each delivered reliably via a separate LTP session. The receiving station reassembles fragments into the complete bundle. This has been successfully tested with binary file transfers (PDF documents) over the air.
+
+APRS beacon identification is supported in BPv7 mode using the same `--beacon` flag. For `bp-send`, beacons are transmitted at the start and end of the transfer sequence. For `bp-recv`, beacons are transmitted periodically while waiting for incoming bundles, with APRS decode of received beacons from the remote station.
+
+```
+./kiss_interface bp-send --device /dev/ttyACM0 --local dtn://g4dpz-1 --remote dtn://g4dpz-2 \
+  --owlt 6000 --beacon --callsign G4DPZ-1 --lat 52.467 --lon -2.022 \
+  --file document.pdf
+./kiss_interface bp-recv --device /dev/ttyACM0 --local dtn://g4dpz-2 \
+  --owlt 6000 --beacon --callsign G4DPZ-2 --lat 52.467 --lon -2.022 \
+  --outdir ./received/
+```
+
 The CLI requires the operator to specify their DTN endpoint (which contains their callsign):
 ```
 ./kiss_interface ltp-send --device /dev/ttyACM0 --local dtn://g4dpz-1 --remote dtn://g4dpz-2 "message"
@@ -135,16 +158,19 @@ The CLI requires the operator to specify their DTN endpoint (which contains thei
 | AX.25 send/receive/echo | Callsign in every AX.25 frame header | Every packet |
 | AX.25 ping | Callsign in every AX.25 frame header | Every ping/reply |
 | LTP send/receive | DTN endpoint ID containing callsign + periodic APRS beacon | Every session + every 2 minutes |
+| BPv7 send | DTN endpoint ID containing callsign + APRS beacon at start and end of transfer | Every transfer |
+| BPv7 receive | DTN endpoint ID containing callsign + periodic APRS beacon | Every 2 minutes (configurable) |
 | Standalone beacon | Callsign in AX.25 source address + APRS position report | Every 2 minutes (configurable) |
 
 ## Purpose of the Experiment
 
 This system is being developed for the purpose of self-training and technical investigation, which are recognised purposes under the OFCOM amateur radio licence and ITU Radio Regulations Article 25. Specifically:
 
-1. Investigating the application of Delay-Tolerant Networking protocols (originally developed by NASA/JPL for deep-space communications) to terrestrial amateur radio links
-2. Evaluating the performance of the Licklider Transmission Protocol over 1200 baud VHF packet radio
-3. Measuring round-trip times and link reliability characteristics for constrained RF links
-4. Developing open-source tools for the amateur radio community
+1. Investigating the application of Delay-Tolerant Networking protocols (originally developed by NASA/JPL for deep-space communications, and implemented in NASA's ION software suite) to terrestrial amateur radio links
+2. Evaluating the performance of the Licklider Transmission Protocol and Bundle Protocol version 7 over 1200 baud VHF packet radio
+3. Demonstrating reliable file transfer using BPv7 fragmentation over LTP over constrained RF links
+4. Measuring round-trip times and link reliability characteristics for constrained RF links
+5. Developing open-source tools for the amateur radio community (source code: [https://github.com/g4dpz/ion-dtn-terrestrial](https://github.com/g4dpz/ion-dtn-terrestrial))
 
 All transmissions are non-commercial, between licensed amateur radio stations, using standard amateur radio equipment operating within the permitted frequency bands and power levels specified in the OFCOM licence.
 
@@ -162,10 +188,11 @@ All transmissions are non-commercial, between licensed amateur radio stations, u
 This proposal is submitted on behalf of AMSAT-UK.
 
 Licensee callsign: G4DPZ
-Organisation: AMSAT-UK (Radio Amateur Satellite Corporation of the United Kingdom)
+Author: David Johnson, G4DPZ, Hon. Sec. AMSAT-UK
+Organisation: AMSAT-UK
 Website: [https://amsat-uk.org](https://amsat-uk.org)
 
 ---
 
-Document version: 1.0
+Document version: 2.0
 Date: April 2026

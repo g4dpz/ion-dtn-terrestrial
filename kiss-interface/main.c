@@ -460,8 +460,9 @@ int validate_args(const cli_args_t *args)
         }
     }
 
-    /* ltp-recv or ltp-send with --beacon requires beacon options */
-    if ((args->mode == CMD_MODE_LTP_RECV || args->mode == CMD_MODE_LTP_SEND) &&
+    /* --beacon requires beacon options */
+    if ((args->mode == CMD_MODE_LTP_RECV || args->mode == CMD_MODE_LTP_SEND ||
+         args->mode == CMD_MODE_BP_SEND || args->mode == CMD_MODE_BP_RECV) &&
         args->beacon_enabled) {
         if (!args->beacon_callsign) {
             fprintf(stderr, "error: --callsign is required when --beacon is used\n");
@@ -1663,10 +1664,33 @@ int main(int argc, char *argv[])
                 bp_plen = strlen(args.payload);
             }
 
+            /* Beacon at start of BP send */
+            beacon_state_t bp_sbcn;
+            int bp_sbeacon = 0;
+            if (args.beacon_enabled) {
+                const char *bcmt = (args.beacon_comment && args.beacon_comment[0])
+                                   ? args.beacon_comment : BEACON_DEFAULT_COMMENT;
+                if (beacon_init(&bp_sbcn, args.beacon_callsign,
+                                args.beacon_lat, args.beacon_lon,
+                                bcmt, args.beacon_interval) != 0) {
+                    fprintf(stderr, "error: failed to initialize beacon\n");
+                    if (file_data) free(file_data);
+                    serial_close(fd);
+                    return 1;
+                }
+                bp_sbeacon = 1;
+                beacon_transmit(&bp_sbcn, fd);
+            }
+
             rc = cmd_bp_send(fd, args.local_eid, args.remote_eid,
                              bp_payload, bp_plen,
                              args.lifetime_sec, args.mtu, args.owlt_ms,
                              args.retries, args.verbose);
+
+            /* Beacon at end of BP send */
+            if (bp_sbeacon)
+                beacon_transmit(&bp_sbcn, fd);
+
             if (file_data) free(file_data);
         }
         break;
@@ -1691,9 +1715,69 @@ int main(int argc, char *argv[])
             bpeng.on_block_received = bp_recv_block_cb;
             bpeng.cb_ctx = &bpctx;
 
-            printf("BP recv on %s... (Ctrl-C to stop)\n", args.local_eid);
-            rc = ltp_engine_run(&bpeng, fd, 0);
-            printf("\nBP recv stopped: %u bundles received\n", bpctx.bundles_received);
+            if (args.beacon_enabled) {
+                /* BP recv with beacon — beacon at start, periodic during idle, APRS decode */
+                const char *bcmt = (args.beacon_comment && args.beacon_comment[0])
+                                   ? args.beacon_comment : BEACON_DEFAULT_COMMENT;
+                beacon_state_t bp_rbcn;
+                if (beacon_init(&bp_rbcn, args.beacon_callsign,
+                                args.beacon_lat, args.beacon_lon,
+                                bcmt, args.beacon_interval) != 0) {
+                    fprintf(stderr, "error: failed to initialize beacon\n");
+                    serial_close(fd);
+                    return 1;
+                }
+
+                printf("BP recv on %s with beacon %s every %ds (Ctrl-C to stop)\n",
+                       args.local_eid, args.beacon_callsign, args.beacon_interval);
+                beacon_transmit(&bp_rbcn, fd);
+
+                kiss_decoder_t bpdec;
+                kiss_decoder_init(&bpdec);
+                uint8_t bprbuf[256], bpkpay[KISS_MAX_PAYLOAD];
+                size_t bpklen = 0;
+
+                while (g_running) {
+                    int lt = ltp_get_next_timeout_ms(&bpeng);
+                    int bt = beacon_get_timeout_ms(&bp_rbcn);
+                    int tout = bt;
+                    if (lt >= 0 && (tout < 0 || lt < tout)) tout = lt;
+                    if (tout < 0) tout = 1000;
+
+                    struct pollfd pf;
+                    pf.fd = fd; pf.events = POLLIN;
+                    int pr = poll(&pf, 1, tout);
+                    if (pr < 0) { if (errno == EINTR) continue; break; }
+
+                    if (pf.revents & POLLIN) {
+                        ssize_t n = read(fd, bprbuf, sizeof(bprbuf));
+                        if (n > 0) {
+                            for (ssize_t i = 0; i < n; i++) {
+                                if (kiss_decoder_feed(&bpdec, bprbuf[i], bpkpay,
+                                                      sizeof(bpkpay), &bpklen) == 1) {
+                                    if (aprs_is_ax25_frame(bpkpay, bpklen))
+                                        aprs_log_packet(bpkpay, bpklen, args.verbose);
+                                    else
+                                        ltp_process_segment(&bpeng, fd, bpkpay, bpklen);
+                                }
+                            }
+                        }
+                    }
+
+                    ltp_fire_expired_timers(&bpeng, fd);
+
+                    if (beacon_is_due(&bp_rbcn) == 1)
+                        beacon_transmit(&bp_rbcn, fd);
+                }
+
+                printf("\nBP recv stopped: %u bundles received, beacon %s\n",
+                       bpctx.bundles_received, args.beacon_callsign);
+                rc = 0;
+            } else {
+                printf("BP recv on %s... (Ctrl-C to stop)\n", args.local_eid);
+                rc = ltp_engine_run(&bpeng, fd, 0);
+                printf("\nBP recv stopped: %u bundles received\n", bpctx.bundles_received);
+            }
         }
         break;
     default:

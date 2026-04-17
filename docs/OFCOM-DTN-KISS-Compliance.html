@@ -6,6 +6,147 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>DTN over KISS: Regulatory Compliance</title>
   <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
     code{white-space: pre-wrap;}
     span.smallcaps{font-variant: small-caps;}
     div.columns{display: flex; gap: min(4vw, 1.5em);}
@@ -22,7 +163,6 @@
     }
     .display.math{display: block; text-align: center; margin: 0.5rem auto;}
   </style>
-  <link rel="stylesheet" href="data:text/css,body{font-family:serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.6}h1{font-size:1.5em}h2{font-size:1.2em;border-bottom:1px solid #ccc;padding-bottom:4px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:6px 10px;text-align:left}code{background:#f4f4f4;padding:2px 4px;font-size:0.9em}pre{background:#f4f4f4;padding:10px;overflow-x:auto}" />
 </head>
 <body>
 <header id="title-block-header">
@@ -38,24 +178,31 @@ Delay-Tolerant Networking (DTN) protocols over standard 1200 baud VHF
 amateur packet radio links. DTN is a suite of networking protocols
 developed by NASA and the IETF for reliable communications over links
 with long delays and intermittent connectivity, such as deep-space and
-satellite links. AMSAT-UK seeks to evaluate these protocols on
+satellite links. NASA’s reference implementation, Interplanetary Overlay
+Network (ION), has been deployed on the International Space Station and
+deep-space missions. AMSAT-UK seeks to evaluate these protocols on
 terrestrial amateur radio as a stepping stone toward their use on future
 amateur satellite missions.</p>
 <p>The system uses standard amateur radio equipment (Yaesu FT-817
 transceivers and Mobilinkd TNC3 terminal node controllers) operating
 within OFCOM-permitted frequency bands and power levels. The software is
-open-source and implements two protocol modes: a conventional AX.25
-packet mode and a Licklider Transmission Protocol (LTP) mode that
-provides reliable data transfer with acknowledgment and
-retransmission.</p>
+open-source (available at <a
+href="https://github.com/g4dpz/ion-dtn-terrestrial">https://github.com/g4dpz/ion-dtn-terrestrial</a>)
+and implements a full DTN protocol stack: conventional AX.25 packet
+radio, Licklider Transmission Protocol (LTP) for reliable data transfer
+with acknowledgment and retransmission, and Bundle Protocol version 7
+(BPv7) for DTN bundle encoding with fragmentation and reassembly. The
+system has been successfully tested over the air, including bit-perfect
+transfer of binary files using BPv7 fragmentation over LTP over 1200
+baud VHF.</p>
 <p>Station identification is maintained at all times in compliance with
 the OFCOM Amateur Radio Licence (2024 edition). In AX.25 mode, the
-operator’s callsign is embedded in every transmitted frame. In LTP mode,
-DTN endpoint identifiers containing the operator’s callsign
+operator’s callsign is embedded in every transmitted frame. In LTP and
+BPv7 modes, DTN endpoint identifiers containing the operator’s callsign
 (e.g. dtn://g4dpz-1) are used for addressing, supplemented by periodic
-APRS position beacons every 2 minutes containing the operator’s callsign
-in the AX.25 source address, ensuring the station remains identifiable
-to both conventional packet radio and APRS monitoring equipment.</p>
+APRS position beacons containing the operator’s callsign in the AX.25
+source address, ensuring the station remains identifiable to both
+conventional packet radio and APRS monitoring equipment.</p>
 <p>All transmissions are conducted for the purposes of self-training and
 technical investigation, in accordance with the terms of the amateur
 radio licence and ITU Radio Regulations Article 25.</p>
@@ -67,13 +214,12 @@ how the system conforms to OFCOM amateur radio licence conditions
 regarding station identification and is intended for presentation to
 OFCOM to demonstrate regulatory awareness and compliance.</p>
 <h2 id="proposing-organisation">Proposing Organisation</h2>
-<p>AMSAT-UK is the Radio Amateur Satellite Corporation of the United
-Kingdom, a registered charity and membership organisation dedicated to
-the advancement of amateur radio satellite communications, education,
-and technical research. AMSAT-UK members have a long history of
-designing, building, and operating amateur radio satellites and ground
-station systems, and of working constructively with OFCOM on spectrum
-matters relating to the amateur satellite service.</p>
+<p>AMSAT-UK is a registered charity and membership organisation
+dedicated to the advancement of amateur radio satellite communications,
+education, and technical research. AMSAT-UK members have a long history
+of designing, building, and operating amateur radio satellites and
+ground station systems, and of working constructively with OFCOM on
+spectrum matters relating to the amateur satellite service.</p>
 <p>This proposal arises from AMSAT-UK’s interest in applying
 Delay-Tolerant Networking techniques — originally developed for space
 communications — to terrestrial amateur radio links, with the goal of
@@ -92,9 +238,14 @@ and Raspberry Pi).</p>
 <li>RF physical layer: 1200 baud AFSK on VHF amateur bands</li>
 <li>KISS framing: host-to-TNC serial protocol for packet
 delineation</li>
-<li>AX.25 UI frames (current) / LTP segments (planned): data link /
-transport</li>
-<li>Application data: user messages, ping payloads, or DTN bundles</li>
+<li>AX.25 UI frames: standard amateur packet radio addressing and APRS
+beacons</li>
+<li>LTP (Licklider Transmission Protocol): reliable data transfer with
+checkpoint/report acknowledgment</li>
+<li>BPv7 (Bundle Protocol version 7): DTN bundle encoding with CBOR
+serialisation, fragmentation, and reassembly</li>
+<li>Application data: user messages, ping payloads, or file
+transfers</li>
 </ol>
 <h2 id="applicable-regulations-and-standards">Applicable Regulations and
 Standards</h2>
@@ -159,6 +310,16 @@ LTP, used by NASA and ESA for deep-space communications. (<a
 href="https://public.ccsds.org/Pubs/734x1b1.pdf">Source:
 CCSDS</a>)</p></li>
 </ul>
+<h3 id="reference-implementations">Reference Implementations</h3>
+<ul>
+<li>ION (Interplanetary Overlay Network): NASA/JPL’s reference
+implementation of DTN protocols, including BP and LTP. ION is deployed
+on the International Space Station and has been used on deep-space
+missions including DINET (Deep Impact Network Experiment). ION is
+open-source and maintained by NASA/JPL. (<a
+href="https://sourceforge.net/projects/ion-dtn/">Source:
+NASA/JPL</a>)</li>
+</ul>
 <h2 id="station-identification-compliance">Station Identification
 Compliance</h2>
 <h3 id="ofcom-licence-requirement">OFCOM Licence Requirement</h3>
@@ -193,11 +354,11 @@ practicable.”</p>
 <p>The system’s CLI requires the operator to specify their callsign
 explicitly:</p>
 <pre><code>./kiss_interface send --device /dev/ttyACM0 --src G4DPZ-1 --dst G4DPZ-2 &quot;message&quot;</code></pre>
-<h4 id="planned-implementation-ltp-over-kiss-mode">Planned
-Implementation (LTP over KISS Mode)</h4>
-<p>In the planned LTP-over-KISS implementation, the AX.25 framing layer
-is replaced by LTP segments encapsulated directly in KISS frames. LTP
-uses numeric Engine IDs rather than callsign strings in its segment
+<h4 id="ltp-over-kiss-mode-implemented">LTP over KISS Mode
+(Implemented)</h4>
+<p>In the LTP-over-KISS implementation, the AX.25 framing layer is
+replaced by LTP segments encapsulated directly in KISS frames. LTP uses
+numeric Engine IDs rather than callsign strings in its segment
 headers.</p>
 <p>To maintain compliance with OFCOM identification requirements, the
 system uses DTN endpoint identifiers that embed the operator’s
@@ -231,6 +392,30 @@ considered “as frequently as practicable” for a data station</p>
 <pre><code>./kiss_interface beacon --device /dev/ttyACM0 --callsign G4DPZ-1 --lat 52.467 --lon -2.022</code></pre>
 <p>Or integrated with LTP receive mode:</p>
 <pre><code>./kiss_interface ltp-recv --device /dev/ttyACM0 --local dtn://g4dpz-2 --beacon --callsign G4DPZ-2 --lat 52.467 --lon -2.022</code></pre>
+<h4 id="bpv7-over-ltp-mode-implemented">BPv7 over LTP Mode
+(Implemented)</h4>
+<p>The Bundle Protocol version 7 (BPv7) layer sits above LTP, providing
+DTN bundle encoding with CBOR serialisation, fragmentation, and
+reassembly. BPv7 bundles use DTN endpoint identifiers
+(e.g. <code>dtn://g4dpz-1</code>) for source and destination addressing,
+with the operator’s callsign embedded in the endpoint URI.</p>
+<p>For payloads larger than 800 bytes, the system automatically
+fragments the bundle into multiple BPv7 fragments, each delivered
+reliably via a separate LTP session. The receiving station reassembles
+fragments into the complete bundle. This has been successfully tested
+with binary file transfers (PDF documents) over the air.</p>
+<p>APRS beacon identification is supported in BPv7 mode using the same
+<code>--beacon</code> flag. For <code>bp-send</code>, beacons are
+transmitted at the start and end of the transfer sequence. For
+<code>bp-recv</code>, beacons are transmitted periodically while waiting
+for incoming bundles, with APRS decode of received beacons from the
+remote station.</p>
+<pre><code>./kiss_interface bp-send --device /dev/ttyACM0 --local dtn://g4dpz-1 --remote dtn://g4dpz-2 \
+  --owlt 6000 --beacon --callsign G4DPZ-1 --lat 52.467 --lon -2.022 \
+  --file document.pdf
+./kiss_interface bp-recv --device /dev/ttyACM0 --local dtn://g4dpz-2 \
+  --owlt 6000 --beacon --callsign G4DPZ-2 --lat 52.467 --lon -2.022 \
+  --outdir ./received/</code></pre>
 <p>The CLI requires the operator to specify their DTN endpoint (which
 contains their callsign):</p>
 <pre><code>./kiss_interface ltp-send --device /dev/ttyACM0 --local dtn://g4dpz-1 --remote dtn://g4dpz-2 &quot;message&quot;</code></pre>
@@ -266,6 +451,17 @@ Mechanisms</h3>
 <td>Every session + every 2 minutes</td>
 </tr>
 <tr class="even">
+<td>BPv7 send</td>
+<td>DTN endpoint ID containing callsign + APRS beacon at start and end
+of transfer</td>
+<td>Every transfer</td>
+</tr>
+<tr class="odd">
+<td>BPv7 receive</td>
+<td>DTN endpoint ID containing callsign + periodic APRS beacon</td>
+<td>Every 2 minutes (configurable)</td>
+</tr>
+<tr class="even">
 <td>Standalone beacon</td>
 <td>Callsign in AX.25 source address + APRS position report</td>
 <td>Every 2 minutes (configurable)</td>
@@ -279,13 +475,18 @@ amateur radio licence and ITU Radio Regulations Article 25.
 Specifically:</p>
 <ol type="1">
 <li>Investigating the application of Delay-Tolerant Networking protocols
-(originally developed by NASA/JPL for deep-space communications) to
-terrestrial amateur radio links</li>
+(originally developed by NASA/JPL for deep-space communications, and
+implemented in NASA’s ION software suite) to terrestrial amateur radio
+links</li>
 <li>Evaluating the performance of the Licklider Transmission Protocol
-over 1200 baud VHF packet radio</li>
+and Bundle Protocol version 7 over 1200 baud VHF packet radio</li>
+<li>Demonstrating reliable file transfer using BPv7 fragmentation over
+LTP over constrained RF links</li>
 <li>Measuring round-trip times and link reliability characteristics for
 constrained RF links</li>
-<li>Developing open-source tools for the amateur radio community</li>
+<li>Developing open-source tools for the amateur radio community (source
+code: <a
+href="https://github.com/g4dpz/ion-dtn-terrestrial">https://github.com/g4dpz/ion-dtn-terrestrial</a>)</li>
 </ol>
 <p>All transmissions are non-commercial, between licensed amateur radio
 stations, using standard amateur radio equipment operating within the
@@ -327,10 +528,10 @@ href="https://github.com/g4dpz/ion-dtn-terrestrial">https://github.com/g4dpz/ion
 </table>
 <h2 id="contact">Contact</h2>
 <p>This proposal is submitted on behalf of AMSAT-UK.</p>
-<p>Licensee callsign: G4DPZ Organisation: AMSAT-UK (Radio Amateur
-Satellite Corporation of the United Kingdom) Website: <a
+<p>Licensee callsign: G4DPZ Author: David Johnson, G4DPZ, Hon. Sec.
+AMSAT-UK Organisation: AMSAT-UK Website: <a
 href="https://amsat-uk.org">https://amsat-uk.org</a></p>
 <hr />
-<p>Document version: 1.0 Date: April 2026</p>
+<p>Document version: 2.0 Date: April 2026</p>
 </body>
 </html>
