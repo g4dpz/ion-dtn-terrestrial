@@ -24,7 +24,9 @@ typedef enum {
     CMD_MODE_PING,
     CMD_MODE_LTP_SEND,
     CMD_MODE_LTP_RECV,
-    CMD_MODE_BEACON
+    CMD_MODE_BEACON,
+    CMD_MODE_BP_SEND,
+    CMD_MODE_BP_RECV
 } cmd_mode_t;
 
 typedef struct {
@@ -51,6 +53,9 @@ typedef struct {
     const char *beacon_comment;
     int         beacon_interval;
     int         beacon_enabled;
+    const char *file_path;
+    const char *outdir;
+    int         lifetime_sec;
     cmd_mode_t  mode;
 } cli_args_t;
 

@@ -27,6 +27,8 @@
 #include "ltp.h"
 #include "beacon.h"
 #include "aprs.h"
+#include "bp.h"
+#include "cbor.h"
 
 /* ------------------------------------------------------------------ */
 /* Global signal flag                                                  */
@@ -44,7 +46,9 @@ typedef enum {
     CMD_MODE_PING,
     CMD_MODE_LTP_SEND,
     CMD_MODE_LTP_RECV,
-    CMD_MODE_BEACON
+    CMD_MODE_BEACON,
+    CMD_MODE_BP_SEND,
+    CMD_MODE_BP_RECV
 } cmd_mode_t;
 
 typedef struct {
@@ -71,6 +75,9 @@ typedef struct {
     const char *beacon_comment;   /* Beacon comment text */
     int         beacon_interval;  /* Beacon interval in seconds (default 120) */
     int         beacon_enabled;   /* --beacon flag for ltp-recv */
+    const char *file_path;        /* --file for bp-send */
+    const char *outdir;           /* --outdir for bp-recv */
+    int         lifetime_sec;     /* --lifetime (default 3600) */
     cmd_mode_t  mode;
 } cli_args_t;
 
@@ -89,6 +96,8 @@ void print_usage(const char *prog)
     printf("  ltp-send  Send a data block reliably using LTP\n");
     printf("  ltp-recv  Receive data blocks reliably using LTP\n");
     printf("  beacon    Transmit periodic APRS position beacons\n");
+    printf("  bp-send   Send a BPv7 bundle over LTP\n");
+    printf("  bp-recv   Receive BPv7 bundles over LTP\n");
     printf("\n");
     printf("Options:\n");
     printf("  --device <path[:baud]>  Serial device (required)\n");
@@ -111,6 +120,9 @@ void print_usage(const char *prog)
     printf("  --comment <text>        Beacon comment (default: repo URL)\n");
     printf("  --beacon-interval <s>   Beacon interval in seconds (default: 120)\n");
     printf("  --beacon                Enable beaconing in ltp-recv mode\n");
+    printf("  --file <path>           Read payload from file (bp-send)\n");
+    printf("  --outdir <dir>          Write received bundles to directory (bp-recv)\n");
+    printf("  --lifetime <seconds>    Bundle lifetime (default: 3600)\n");
     printf("  --verbose               Enable verbose/debug output\n");
     printf("  --help                  Show this help message\n");
     printf("\n");
@@ -122,6 +134,8 @@ void print_usage(const char *prog)
     printf("  %s ltp-send --device /dev/ttyACM0 --local dtn://g4dpz-1 --remote dtn://g4dpz-2 \"Hello\"\n", prog);
     printf("  %s ltp-recv --device /dev/ttyACM0 --local dtn://g4dpz-2 --verbose\n", prog);
     printf("  %s beacon --device /dev/ttyACM0 --callsign G4DPZ-1 --lat 52.467 --lon -2.022\n", prog);
+    printf("  %s bp-send --device /dev/ttyACM0 --local dtn://g4dpz-1 --remote dtn://g4dpz-2 \"Hello BPv7\"\n", prog);
+    printf("  %s bp-recv --device /dev/ttyACM0 --local dtn://g4dpz-2\n", prog);
 }
 
 /* ------------------------------------------------------------------ */
@@ -185,6 +199,9 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
     args->beacon_comment = NULL;
     args->beacon_interval = 120;
     args->beacon_enabled = 0;
+    args->file_path = NULL;
+    args->outdir = NULL;
+    args->lifetime_sec = 3600;
 
     if (argc < 2)
         return 0;  /* No subcommand — caller will handle */
@@ -210,6 +227,10 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
         args->mode = CMD_MODE_LTP_RECV;
     else if (strcmp(cmd, "beacon") == 0)
         args->mode = CMD_MODE_BEACON;
+    else if (strcmp(cmd, "bp-send") == 0)
+        args->mode = CMD_MODE_BP_SEND;
+    else if (strcmp(cmd, "bp-recv") == 0)
+        args->mode = CMD_MODE_BP_RECV;
     else {
         fprintf(stderr, "error: unknown command '%s'\n", cmd);
         return -1;
@@ -237,6 +258,9 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
         { "comment",  required_argument, NULL, 'M' },
         { "beacon-interval", required_argument, NULL, 'B' },
         { "beacon",   no_argument,       NULL, 'b' },
+        { "file",     required_argument, NULL, 'F' },
+        { "outdir",   required_argument, NULL, 'P' },
+        { "lifetime", required_argument, NULL, 'E' },
         { "verbose",  no_argument,       NULL, 'v' },
         { "help",     no_argument,       NULL, 'h' },
         { NULL, 0, NULL, 0 }
@@ -246,7 +270,7 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
     optind = 2;
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "d:s:D:t:T:l:c:o:i:L:R:m:w:r:C:A:O:M:B:bvh", long_opts, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "d:s:D:t:T:l:c:o:i:L:R:m:w:r:C:A:O:M:B:bF:P:E:vh", long_opts, NULL)) != -1) {
         switch (opt) {
         case 'd':
             args->device = optarg;
@@ -308,6 +332,15 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
         case 'b':
             args->beacon_enabled = 1;
             break;
+        case 'F':
+            args->file_path = optarg;
+            break;
+        case 'P':
+            args->outdir = optarg;
+            break;
+        case 'E':
+            args->lifetime_sec = atoi(optarg);
+            break;
         case 'v':
             args->verbose = 1;
             break;
@@ -320,7 +353,8 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
     }
 
     /* For send and ltp-send modes, remaining positional arg is the payload */
-    if ((args->mode == CMD_MODE_SEND || args->mode == CMD_MODE_LTP_SEND) && optind < argc) {
+    if ((args->mode == CMD_MODE_SEND || args->mode == CMD_MODE_LTP_SEND ||
+         args->mode == CMD_MODE_BP_SEND) && optind < argc) {
         args->payload = argv[optind];
     }
 
@@ -385,7 +419,8 @@ int validate_args(const cli_args_t *args)
     }
 
     /* LTP-specific validation */
-    if (args->mode == CMD_MODE_LTP_SEND || args->mode == CMD_MODE_LTP_RECV) {
+    if (args->mode == CMD_MODE_LTP_SEND || args->mode == CMD_MODE_LTP_RECV ||
+        args->mode == CMD_MODE_BP_SEND || args->mode == CMD_MODE_BP_RECV) {
         if (!args->local_eid) {
             fprintf(stderr, "error: --local is required for %s mode\n",
                     args->mode == CMD_MODE_LTP_SEND ? "ltp-send" : "ltp-recv");
@@ -399,6 +434,17 @@ int validate_args(const cli_args_t *args)
         }
         if (!args->payload) {
             fprintf(stderr, "error: payload argument is required for ltp-send mode\n");
+            return -1;
+        }
+    }
+
+    if (args->mode == CMD_MODE_BP_SEND) {
+        if (!args->remote_eid) {
+            fprintf(stderr, "error: --remote is required for bp-send mode\n");
+            return -1;
+        }
+        if (!args->payload && !args->file_path) {
+            fprintf(stderr, "error: payload or --file is required for bp-send mode\n");
             return -1;
         }
     }
@@ -1057,6 +1103,212 @@ int cmd_beacon(int fd, const char *callsign, double lat, double lon,
 }
 
 /* ------------------------------------------------------------------ */
+/* bp_recv_callback — decode and display received bundles              */
+/* ------------------------------------------------------------------ */
+typedef struct {
+    const char *outdir;
+    int verbose;
+    uint32_t bundles_received;
+    bp_reassembly_t reasm;
+} bp_recv_ctx_t;
+
+static void bp_recv_block_cb(const uint8_t *data, uint32_t len,
+                              uint64_t remote_engine_id, void *ctx)
+{
+    (void)remote_engine_id;
+    bp_recv_ctx_t *rc = (bp_recv_ctx_t *)ctx;
+    if (!rc) return;
+
+    bp_bundle_t b;
+    if (bp_decode_bundle(data, len, &b) < 0) {
+        fprintf(stderr, "warning: received LTP block is not a valid bundle\n");
+        return;
+    }
+
+    /* Handle fragments */
+    if (b.primary.flags & BP_FLAG_FRAGMENT) {
+        int result = bp_reassembly_add(&rc->reasm, &b);
+        if (result == 0) {
+            printf("  Fragment: offset=%lu, len=%zu, total=%lu\n",
+                   (unsigned long)b.primary.fragment_offset,
+                   b.payload_len,
+                   (unsigned long)b.primary.total_adu_len);
+            return; /* More fragments needed */
+        }
+        if (result < 0) {
+            fprintf(stderr, "warning: fragment reassembly error\n");
+            return;
+        }
+        /* Complete — use reassembled data */
+        time_t now = time(NULL);
+        struct tm *tm = localtime(&now);
+        char ts[32];
+        strftime(ts, sizeof(ts), "%H:%M:%S", tm);
+
+        printf("[%s] Bundle from %s: %lu bytes (reassembled from fragments)\n",
+               ts, b.primary.src.uri, (unsigned long)rc->reasm.total_adu_len);
+
+        if (rc->outdir) {
+            char fname[256];
+            snprintf(fname, sizeof(fname), "%s/%ld_%s.bin",
+                     rc->outdir, (long)time(NULL), b.primary.src.uri + 6);
+            /* Sanitize filename */
+            for (char *p = fname + strlen(rc->outdir) + 1; *p; p++)
+                if (*p == '/' || *p == ':') *p = '_';
+            FILE *f = fopen(fname, "wb");
+            if (f) {
+                fwrite(rc->reasm.data, 1, (size_t)rc->reasm.total_adu_len, f);
+                fclose(f);
+                printf("  Saved to %s\n", fname);
+            }
+        } else {
+            fwrite(rc->reasm.data, 1, (size_t)rc->reasm.total_adu_len, stdout);
+            printf("\n");
+        }
+
+        rc->bundles_received++;
+        bp_reassembly_init(&rc->reasm); /* Reset for next bundle */
+        fflush(stdout);
+        return;
+    }
+
+    /* Non-fragment bundle */
+    time_t now = time(NULL);
+    struct tm *tm = localtime(&now);
+    char ts[32];
+    strftime(ts, sizeof(ts), "%H:%M:%S", tm);
+
+    printf("[%s] Bundle from %s: ", ts, b.primary.src.uri);
+
+    if (rc->outdir) {
+        char fname[256];
+        snprintf(fname, sizeof(fname), "%s/%ld_%s.bin",
+                 rc->outdir, (long)time(NULL), b.primary.src.uri + 6);
+        for (char *p = fname + strlen(rc->outdir) + 1; *p; p++)
+            if (*p == '/' || *p == ':') *p = '_';
+        FILE *f = fopen(fname, "wb");
+        if (f) {
+            fwrite(b.payload, 1, b.payload_len, f);
+            fclose(f);
+            printf("%zu bytes saved to %s\n", b.payload_len, fname);
+        }
+    } else {
+        fwrite(b.payload, 1, b.payload_len, stdout);
+        printf("\n");
+    }
+
+    if (rc->verbose) {
+        printf("  CBOR (%u bytes):", len);
+        for (uint32_t i = 0; i < len && i < 64; i++) printf(" %02X", data[i]);
+        if (len > 64) printf(" ...");
+        printf("\n");
+    }
+
+    rc->bundles_received++;
+    fflush(stdout);
+}
+
+/* ------------------------------------------------------------------ */
+/* cmd_bp_send — send a BPv7 bundle over LTP                          */
+/* ------------------------------------------------------------------ */
+int cmd_bp_send(int fd, const char *local_eid, const char *remote_eid,
+                const uint8_t *payload, size_t payload_len,
+                int lifetime_sec, int mtu, int owlt_ms, int retries, int verbose)
+{
+    uint64_t lifetime_ms = (uint64_t)lifetime_sec * 1000;
+    static uint64_t bp_seq = 0;
+    bp_seq++;
+
+    bp_eid_t src, dst;
+    snprintf(src.uri, sizeof(src.uri), "%s", local_eid);
+    snprintf(dst.uri, sizeof(dst.uri), "%s", remote_eid);
+
+    /* Try encoding as a single bundle first */
+    uint8_t bundle_buf[BP_MAX_BUNDLE_BUF];
+    int enc = bp_encode_bundle(&src, &dst, payload, payload_len,
+                               lifetime_ms, bp_seq, bundle_buf, sizeof(bundle_buf));
+
+    ltp_config_t cfg;
+    cfg.segment_mtu = (uint32_t)mtu;
+    cfg.owlt_ms = (uint32_t)owlt_ms;
+    cfg.max_retries = (uint32_t)retries;
+    cfg.max_block_size = LTP_MAX_BLOCK_SIZE;
+    cfg.verbose = verbose;
+
+    struct timespec start;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
+    if (enc > 0) {
+        /* Single bundle fits */
+        printf("BP send to %s: %zu bytes, 1 bundle\n", remote_eid, payload_len);
+
+        ltp_engine_t eng;
+        ltp_engine_init(&eng, local_eid, &cfg);
+        if (ltp_send_block(&eng, fd, remote_eid,
+                           bundle_buf, (uint32_t)enc) != 0) {
+            fprintf(stderr, "error: LTP send failed\n");
+            return -1;
+        }
+        int rc = ltp_engine_run(&eng, fd, 1);
+
+        struct timespec end;
+        clock_gettime(CLOCK_MONOTONIC, &end);
+        double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+
+        if (rc == 0)
+            printf("Bundle delivered: %zu bytes, %.3f seconds\n", payload_len, elapsed);
+        else
+            fprintf(stderr, "error: bundle delivery failed\n");
+        return rc;
+    }
+
+    /* Need fragmentation */
+    int nfrags = bp_fragment_count(payload_len, BP_DEFAULT_FRAGMENT_SIZE);
+    if (nfrags < 0 || nfrags > BP_MAX_FRAGMENTS) {
+        fprintf(stderr, "error: payload too large for fragmentation\n");
+        return -1;
+    }
+
+    printf("BP send to %s: %zu bytes, %d fragments\n", remote_eid, payload_len, nfrags);
+
+    for (int f = 0; f < nfrags; f++) {
+        uint64_t off = (uint64_t)f * BP_DEFAULT_FRAGMENT_SIZE;
+        size_t flen = payload_len - (size_t)off;
+        if (flen > BP_DEFAULT_FRAGMENT_SIZE) flen = BP_DEFAULT_FRAGMENT_SIZE;
+
+        uint8_t fbuf[BP_MAX_BUNDLE_BUF];
+        int fenc = bp_encode_fragment(&src, &dst, payload + off, flen,
+                                      lifetime_ms, bp_seq, off, (uint64_t)payload_len,
+                                      fbuf, sizeof(fbuf));
+        if (fenc < 0) {
+            fprintf(stderr, "error: fragment %d encode failed\n", f);
+            return -1;
+        }
+
+        printf("  Fragment %d/%d: offset=%lu, len=%zu\n", f + 1, nfrags,
+               (unsigned long)off, flen);
+
+        ltp_engine_t eng;
+        ltp_engine_init(&eng, local_eid, &cfg);
+        if (ltp_send_block(&eng, fd, remote_eid, fbuf, (uint32_t)fenc) != 0) {
+            fprintf(stderr, "error: LTP send failed for fragment %d\n", f);
+            return -1;
+        }
+        if (ltp_engine_run(&eng, fd, 1) != 0) {
+            fprintf(stderr, "error: fragment %d delivery failed\n", f);
+            return -1;
+        }
+    }
+
+    struct timespec end;
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+    printf("Bundle delivered: %zu bytes, %d fragments, %.3f seconds\n",
+           payload_len, nfrags, elapsed);
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
 /* main — parse CLI, open serial, configure TNC, dispatch, cleanup     */
 /* Requirements: 1.1, 1.2, 1.3, 8.1, 8.5                              */
 /* ------------------------------------------------------------------ */
@@ -1103,6 +1355,8 @@ int main(int argc, char *argv[])
     case CMD_MODE_LTP_SEND: mode_str = "ltp-send"; break;
     case CMD_MODE_LTP_RECV: mode_str = "ltp-recv"; break;
     case CMD_MODE_BEACON:   mode_str = "beacon";   break;
+    case CMD_MODE_BP_SEND:  mode_str = "bp-send";  break;
+    case CMD_MODE_BP_RECV:  mode_str = "bp-recv";  break;
     default: break;
     }
 
@@ -1367,6 +1621,76 @@ int main(int argc, char *argv[])
                         args.beacon_lat, args.beacon_lon,
                         args.beacon_comment, args.beacon_interval,
                         args.verbose);
+        break;
+    case CMD_MODE_BP_SEND:
+        {
+            const uint8_t *bp_payload = NULL;
+            size_t bp_plen = 0;
+            uint8_t *file_data = NULL;
+
+            if (args.file_path) {
+                FILE *f = fopen(args.file_path, "rb");
+                if (!f) {
+                    fprintf(stderr, "error: cannot open file '%s'\n", args.file_path);
+                    serial_close(fd);
+                    return 1;
+                }
+                fseek(f, 0, SEEK_END);
+                long fsize = ftell(f);
+                fseek(f, 0, SEEK_SET);
+                if (fsize <= 0 || fsize > BP_MAX_PAYLOAD) {
+                    fprintf(stderr, "error: file too large (%ld bytes, max %d)\n",
+                            fsize, BP_MAX_PAYLOAD);
+                    fclose(f);
+                    serial_close(fd);
+                    return 1;
+                }
+                file_data = (uint8_t *)malloc((size_t)fsize);
+                if (!file_data) { fclose(f); serial_close(fd); return 1; }
+                if (fread(file_data, 1, (size_t)fsize, f) != (size_t)fsize) {
+                    fprintf(stderr, "error: failed to read file\n");
+                    free(file_data); fclose(f); serial_close(fd); return 1;
+                }
+                fclose(f);
+                bp_payload = file_data;
+                bp_plen = (size_t)fsize;
+            } else {
+                bp_payload = (const uint8_t *)args.payload;
+                bp_plen = strlen(args.payload);
+            }
+
+            rc = cmd_bp_send(fd, args.local_eid, args.remote_eid,
+                             bp_payload, bp_plen,
+                             args.lifetime_sec, args.mtu, args.owlt_ms,
+                             args.retries, args.verbose);
+            if (file_data) free(file_data);
+        }
+        break;
+    case CMD_MODE_BP_RECV:
+        {
+            ltp_config_t bpcfg;
+            bpcfg.segment_mtu = (uint32_t)args.mtu;
+            bpcfg.owlt_ms = (uint32_t)args.owlt_ms;
+            bpcfg.max_retries = (uint32_t)args.retries;
+            bpcfg.max_block_size = LTP_MAX_BLOCK_SIZE;
+            bpcfg.verbose = args.verbose;
+
+            ltp_engine_t bpeng;
+            ltp_engine_init(&bpeng, args.local_eid, &bpcfg);
+
+            bp_recv_ctx_t bpctx;
+            memset(&bpctx, 0, sizeof(bpctx));
+            bpctx.outdir = args.outdir;
+            bpctx.verbose = args.verbose;
+            bp_reassembly_init(&bpctx.reasm);
+
+            bpeng.on_block_received = bp_recv_block_cb;
+            bpeng.cb_ctx = &bpctx;
+
+            printf("BP recv on %s... (Ctrl-C to stop)\n", args.local_eid);
+            rc = ltp_engine_run(&bpeng, fd, 0);
+            printf("\nBP recv stopped: %u bundles received\n", bpctx.bundles_received);
+        }
         break;
     default:
         fprintf(stderr, "error: unknown mode\n");

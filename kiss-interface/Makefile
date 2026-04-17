@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -std=c11
 
-SRC = main.c kiss.c ax25.c serial.c ping.c ltp.c sdnv.c beacon.c aprs.c
+SRC = main.c kiss.c ax25.c serial.c ping.c ltp.c sdnv.c beacon.c aprs.c cbor.c bp.c
 OBJ = $(SRC:.c=.o)
 
 # Detect theft library availability
@@ -16,6 +16,9 @@ endif
 kiss_interface: $(OBJ)
 	$(CC) $(CFLAGS) -o $@ $^
 
+bp.o: bp.c
+	$(CC) $(CFLAGS) -Wno-misleading-indentation -c -o $@ $<
+
 test_kiss: test_kiss.c kiss.c
 	$(CC) $(CFLAGS) -o $@ $^ $(THEFT_FLAGS)
 
@@ -25,7 +28,7 @@ test_ax25: test_ax25.c ax25.c kiss.c
 test_serial: test_serial.c serial.c kiss.c
 	$(CC) $(CFLAGS) -o $@ $^
 
-test_cli: test_cli.c main.c kiss.c ax25.c serial.c ping.c ltp.c sdnv.c beacon.c aprs.c
+test_cli: test_cli.c main.c kiss.c ax25.c serial.c ping.c ltp.c sdnv.c beacon.c aprs.c cbor.c bp.c
 	$(CC) $(CFLAGS) -DTEST_CLI_MODE -o $@ $^ -lm
 
 test_ping: test_ping.c ping.c
@@ -43,7 +46,13 @@ test_beacon: test_beacon.c beacon.c ax25.c kiss.c
 test_aprs: test_aprs.c aprs.c ax25.c kiss.c beacon.c
 	$(CC) $(CFLAGS) -o $@ $^ $(THEFT_FLAGS) -lm
 
-test: test_kiss test_ax25 test_serial test_cli test_ping test_sdnv test_ltp test_beacon test_aprs
+test_cbor: test_cbor.c cbor.c
+	$(CC) $(CFLAGS) -o $@ $^ $(THEFT_FLAGS)
+
+test_bp: test_bp.c bp.c cbor.c
+	$(CC) $(CFLAGS) -Wno-misleading-indentation -o $@ $^ $(THEFT_FLAGS)
+
+test: test_kiss test_ax25 test_serial test_cli test_ping test_sdnv test_ltp test_beacon test_aprs test_cbor test_bp
 	./test_kiss
 	./test_ax25
 	./test_serial
@@ -53,8 +62,10 @@ test: test_kiss test_ax25 test_serial test_cli test_ping test_sdnv test_ltp test
 	./test_ltp
 	./test_beacon
 	./test_aprs
+	./test_cbor
+	./test_bp
 
 clean:
-	rm -f kiss_interface test_kiss test_ax25 test_serial test_cli test_ping test_sdnv test_ltp test_beacon test_aprs *.o
+	rm -f kiss_interface test_kiss test_ax25 test_serial test_cli test_ping test_sdnv test_ltp test_beacon test_aprs test_cbor test_bp *.o
 
 .PHONY: test clean
