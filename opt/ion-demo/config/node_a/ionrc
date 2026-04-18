@@ -1,5 +1,5 @@
 # ION Node A (ipn:1) - Source
-1 1 ''
+1 1 ionconfig
 s
 # Data rate high enough for CGR to accept large bundles
 # Actual pacing happens at the serial/RF layer
