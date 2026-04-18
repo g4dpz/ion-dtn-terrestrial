@@ -32,6 +32,8 @@
 #include "nrzi.h"
 #include "afsk.h"
 #include "uhd_tx.h"
+#include "uhd_rx.h"
+#include "afsk_demod.h"
 
 /* ------------------------------------------------------------------ */
 /* Global signal flag                                                  */
@@ -52,7 +54,8 @@ typedef enum {
     CMD_MODE_BEACON,
     CMD_MODE_BP_SEND,
     CMD_MODE_BP_RECV,
-    CMD_MODE_SDR_BEACON
+    CMD_MODE_SDR_BEACON,
+    CMD_MODE_SDR_RECV
 } cmd_mode_t;
 
 typedef struct {
@@ -107,6 +110,7 @@ void print_usage(const char *prog)
     printf("  bp-send   Send a BPv7 bundle over LTP\n");
     printf("  bp-recv   Receive BPv7 bundles over LTP\n");
     printf("  sdr-beacon Transmit APRS beacons via B200 mini SDR\n");
+    printf("  sdr-recv   Receive APRS packets via B200 mini SDR\n");
     printf("\n");
     printf("Options:\n");
     printf("  --device <path[:baud]>  Serial device (required)\n");
@@ -150,6 +154,7 @@ void print_usage(const char *prog)
     printf("  %s bp-send --device /dev/ttyACM0 --local dtn://g4dpz-1 --remote dtn://g4dpz-2 \"Hello BPv7\"\n", prog);
     printf("  %s bp-recv --device /dev/ttyACM0 --local dtn://g4dpz-2\n", prog);
     printf("  %s sdr-beacon --callsign G4DPZ-1 --lat 52.467 --lon -2.022 --freq 144.850\n", prog);
+    printf("  %s sdr-recv --freq 144.800 --gain 50 --verbose\n", prog);
 }
 
 /* ------------------------------------------------------------------ */
@@ -251,6 +256,8 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
         args->mode = CMD_MODE_BP_RECV;
     else if (strcmp(cmd, "sdr-beacon") == 0)
         args->mode = CMD_MODE_SDR_BEACON;
+    else if (strcmp(cmd, "sdr-recv") == 0)
+        args->mode = CMD_MODE_SDR_RECV;
     else {
         fprintf(stderr, "error: unknown command '%s'\n", cmd);
         return -1;
@@ -410,8 +417,9 @@ int validate_args(const cli_args_t *args)
         return -1;
     }
 
-    /* Device is required for all modes except sdr-beacon */
-    if (!args->device && args->mode != CMD_MODE_SDR_BEACON) {
+    /* Device is required for all modes except sdr-beacon and sdr-recv */
+    if (!args->device && args->mode != CMD_MODE_SDR_BEACON &&
+        args->mode != CMD_MODE_SDR_RECV) {
         fprintf(stderr, "error: --device is required\n");
         return -1;
     }
@@ -522,6 +530,18 @@ int validate_args(const cli_args_t *args)
         }
         if (args->beacon_interval < 10 || args->beacon_interval > 3600) {
             fprintf(stderr, "error: --beacon-interval must be 10-3600\n");
+            return -1;
+        }
+    }
+
+    /* sdr-recv validation */
+    if (args->mode == CMD_MODE_SDR_RECV) {
+        if (args->sdr_freq < 144.0 || args->sdr_freq > 146.0) {
+            fprintf(stderr, "error: --freq must be 144.000-146.000 MHz\n");
+            return -1;
+        }
+        if (args->sdr_gain < 0 || args->sdr_gain > 76) {
+            fprintf(stderr, "error: --gain must be 0-76 for receive\n");
             return -1;
         }
     }
@@ -1467,6 +1487,73 @@ static int run_sdr_beacon(const cli_args_t *args)
     printf("\nSDR beacon stopped.\n");
     return 0;
 }
+
+/* ------------------------------------------------------------------ */
+/* run_sdr_recv — APRS receive via B200 mini SDR                       */
+/* ------------------------------------------------------------------ */
+static void sdr_recv_frame_cb(const uint8_t *frame, size_t frame_len,
+                               int polarity, void *user_data)
+{
+    int verbose = *(int *)user_data;
+
+    /* Use existing APRS decoder — frame is raw AX.25 bytes */
+    if (aprs_is_ax25_frame(frame, frame_len))
+        aprs_log_packet(frame, frame_len, verbose);
+    else {
+        /* Non-APRS AX.25 frame — display raw */
+        char src[AX25_MAX_CALLSIGN], dst[AX25_MAX_CALLSIGN];
+        const uint8_t *info = NULL;
+        int ilen = ax25_strip_frame(frame, frame_len, src, dst, &info);
+        time_t now = time(NULL);
+        struct tm *tm = localtime(&now);
+        char ts[32];
+        strftime(ts, sizeof(ts), "%H:%M:%S", tm);
+        printf("[%s] %s > %s: ", ts, src, dst);
+        if (ilen > 0 && info) fwrite(info, 1, (size_t)ilen, stdout);
+        printf("\n");
+    }
+
+    if (verbose)
+        printf("  (polarity=%s)\n", polarity ? "inverted" : "normal");
+}
+
+static int run_sdr_recv(const cli_args_t *args)
+{
+    double freq_hz = args->sdr_freq * 1e6;
+
+    uhd_rx_state_t rx;
+    if (uhd_rx_init(&rx, freq_hz, args->sdr_gain,
+                     args->sdr_sample_rate, UHD_RX_DEFAULT_DEVIATION,
+                     args->verbose) != 0)
+        return -1;
+
+    int verbose_flag = args->verbose;
+    afsk_demod_t demod;
+    afsk_demod_init(&demod, sdr_recv_frame_cb, &verbose_flag, args->verbose);
+
+    printf("SDR recv on %.3f MHz, gain=%d (Ctrl-C to stop)\n",
+           args->sdr_freq, args->sdr_gain);
+
+    float iq_i[UHD_RX_CHUNK_SAMPLES], iq_q[UHD_RX_CHUNK_SAMPLES];
+    float fm_audio[UHD_RX_CHUNK_SAMPLES];
+    float audio[UHD_RX_AUDIO_CHUNK];
+
+    while (g_running) {
+        int received = uhd_rx_receive(&rx, iq_i, iq_q, UHD_RX_CHUNK_SAMPLES);
+        if (received <= 0) continue;
+
+        uhd_rx_fm_demod(&rx, iq_i, iq_q, (size_t)received, fm_audio);
+        int decimated = uhd_rx_decimate(&rx, fm_audio, (size_t)received,
+                                         audio, UHD_RX_AUDIO_CHUNK);
+        if (decimated > 0)
+            afsk_demod_process(&demod, audio, (size_t)decimated);
+    }
+
+    uhd_rx_cleanup(&rx);
+    printf("\nSDR recv stopped: %d frames decoded\n", demod.frames_decoded);
+    return 0;
+}
+
 #endif /* HAVE_UHD */
 
 /* ------------------------------------------------------------------ */
@@ -1504,9 +1591,17 @@ int main(int argc, char *argv[])
         int rc = run_sdr_beacon(&args);
         return (rc == 0) ? 0 : 1;
     }
+    if (args.mode == CMD_MODE_SDR_RECV) {
+        int rc = run_sdr_recv(&args);
+        return (rc == 0) ? 0 : 1;
+    }
 #else
     if (args.mode == CMD_MODE_SDR_BEACON) {
         fprintf(stderr, "error: sdr-beacon requires UHD library (build with HAVE_UHD)\n");
+        return 1;
+    }
+    if (args.mode == CMD_MODE_SDR_RECV) {
+        fprintf(stderr, "error: sdr-recv requires UHD library (build with HAVE_UHD)\n");
         return 1;
     }
 #endif
@@ -1532,6 +1627,7 @@ int main(int argc, char *argv[])
     case CMD_MODE_BP_SEND:  mode_str = "bp-send";  break;
     case CMD_MODE_BP_RECV:  mode_str = "bp-recv";  break;
     case CMD_MODE_SDR_BEACON: mode_str = "sdr-beacon"; break;
+    case CMD_MODE_SDR_RECV:   mode_str = "sdr-recv";   break;
     default: break;
     }
 

@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -std=c11
 
-SRC = main.c kiss.c ax25.c serial.c ping.c ltp.c sdnv.c beacon.c aprs.c cbor.c bp.c nrzi.c afsk.c uhd_tx.c
+SRC = main.c kiss.c ax25.c serial.c ping.c ltp.c sdnv.c beacon.c aprs.c cbor.c bp.c nrzi.c afsk.c uhd_tx.c uhd_rx.c afsk_demod.c
 OBJ = $(SRC:.c=.o)
 
 # Detect theft library availability
@@ -28,7 +28,7 @@ test_ax25: test_ax25.c ax25.c kiss.c
 test_serial: test_serial.c serial.c kiss.c
 	$(CC) $(CFLAGS) -o $@ $^
 
-test_cli: test_cli.c main.c kiss.c ax25.c serial.c ping.c ltp.c sdnv.c beacon.c aprs.c cbor.c bp.c nrzi.c afsk.c uhd_tx.c
+test_cli: test_cli.c main.c kiss.c ax25.c serial.c ping.c ltp.c sdnv.c beacon.c aprs.c cbor.c bp.c nrzi.c afsk.c uhd_tx.c uhd_rx.c afsk_demod.c
 	$(CC) $(CFLAGS) -DTEST_CLI_MODE -o $@ $^ -lm
 
 test_ping: test_ping.c ping.c
@@ -61,7 +61,13 @@ test_afsk: test_afsk.c afsk.c nrzi.c
 test_uhd_tx: test_uhd_tx.c uhd_tx.c
 	$(CC) $(CFLAGS) -o $@ $^ $(THEFT_FLAGS) -lm
 
-test: test_kiss test_ax25 test_serial test_cli test_ping test_sdnv test_ltp test_beacon test_aprs test_cbor test_bp test_nrzi test_afsk test_uhd_tx
+test_uhd_rx: test_uhd_rx.c uhd_rx.c uhd_tx.c
+	$(CC) $(CFLAGS) -o $@ $^ $(THEFT_FLAGS) -lm
+
+test_afsk_demod: test_afsk_demod.c afsk_demod.c afsk.c nrzi.c ax25.c kiss.c
+	$(CC) $(CFLAGS) -o $@ $^ $(THEFT_FLAGS) -lm
+
+test: test_kiss test_ax25 test_serial test_cli test_ping test_sdnv test_ltp test_beacon test_aprs test_cbor test_bp test_nrzi test_afsk test_uhd_tx test_uhd_rx test_afsk_demod
 	./test_kiss
 	./test_ax25
 	./test_serial
@@ -76,8 +82,10 @@ test: test_kiss test_ax25 test_serial test_cli test_ping test_sdnv test_ltp test
 	./test_nrzi
 	./test_afsk
 	./test_uhd_tx
+	./test_uhd_rx
+	./test_afsk_demod
 
 clean:
-	rm -f kiss_interface test_kiss test_ax25 test_serial test_cli test_ping test_sdnv test_ltp test_beacon test_aprs test_cbor test_bp test_nrzi test_afsk test_uhd_tx *.o
+	rm -f kiss_interface test_kiss test_ax25 test_serial test_cli test_ping test_sdnv test_ltp test_beacon test_aprs test_cbor test_bp test_nrzi test_afsk test_uhd_tx test_uhd_rx test_afsk_demod *.o
 
 .PHONY: test clean

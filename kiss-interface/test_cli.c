@@ -27,7 +27,8 @@ typedef enum {
     CMD_MODE_BEACON,
     CMD_MODE_BP_SEND,
     CMD_MODE_BP_RECV,
-    CMD_MODE_SDR_BEACON
+    CMD_MODE_SDR_BEACON,
+    CMD_MODE_SDR_RECV
 } cmd_mode_t;
 
 typedef struct {
