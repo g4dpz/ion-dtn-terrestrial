@@ -238,7 +238,7 @@ int beacon_transmit(beacon_state_t *state, int fd)
     struct tm *tm = localtime(&now);
     char ts[32];
     strftime(ts, sizeof(ts), "%H:%M:%S", tm);
-    printf("[%s] Beacon: %s\n", ts, state->callsign);
+    printf("[%s] Beacon TX: %s\n", ts, state->callsign);
     fflush(stdout);
 
     return 0;

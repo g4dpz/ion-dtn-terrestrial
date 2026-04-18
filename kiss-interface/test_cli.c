@@ -26,7 +26,8 @@ typedef enum {
     CMD_MODE_LTP_RECV,
     CMD_MODE_BEACON,
     CMD_MODE_BP_SEND,
-    CMD_MODE_BP_RECV
+    CMD_MODE_BP_RECV,
+    CMD_MODE_SDR_BEACON
 } cmd_mode_t;
 
 typedef struct {
@@ -56,6 +57,10 @@ typedef struct {
     const char *file_path;
     const char *outdir;
     int         lifetime_sec;
+    double      sdr_freq;
+    int         sdr_gain;
+    int         sdr_sample_rate;
+    double      sdr_deviation;
     cmd_mode_t  mode;
 } cli_args_t;
 

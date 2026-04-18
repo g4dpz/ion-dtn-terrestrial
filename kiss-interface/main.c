@@ -29,6 +29,9 @@
 #include "aprs.h"
 #include "bp.h"
 #include "cbor.h"
+#include "nrzi.h"
+#include "afsk.h"
+#include "uhd_tx.h"
 
 /* ------------------------------------------------------------------ */
 /* Global signal flag                                                  */
@@ -48,7 +51,8 @@ typedef enum {
     CMD_MODE_LTP_RECV,
     CMD_MODE_BEACON,
     CMD_MODE_BP_SEND,
-    CMD_MODE_BP_RECV
+    CMD_MODE_BP_RECV,
+    CMD_MODE_SDR_BEACON
 } cmd_mode_t;
 
 typedef struct {
@@ -78,6 +82,10 @@ typedef struct {
     const char *file_path;        /* --file for bp-send */
     const char *outdir;           /* --outdir for bp-recv */
     int         lifetime_sec;     /* --lifetime (default 3600) */
+    double      sdr_freq;         /* --freq in MHz (default 144.850) */
+    int         sdr_gain;         /* --gain for SDR (default 50) */
+    int         sdr_sample_rate;  /* --sample-rate (default 480000) */
+    double      sdr_deviation;    /* --deviation in Hz (default 3000) */
     cmd_mode_t  mode;
 } cli_args_t;
 
@@ -98,6 +106,7 @@ void print_usage(const char *prog)
     printf("  beacon    Transmit periodic APRS position beacons\n");
     printf("  bp-send   Send a BPv7 bundle over LTP\n");
     printf("  bp-recv   Receive BPv7 bundles over LTP\n");
+    printf("  sdr-beacon Transmit APRS beacons via B200 mini SDR\n");
     printf("\n");
     printf("Options:\n");
     printf("  --device <path[:baud]>  Serial device (required)\n");
@@ -120,6 +129,10 @@ void print_usage(const char *prog)
     printf("  --comment <text>        Beacon comment (default: repo URL)\n");
     printf("  --beacon-interval <s>   Beacon interval in seconds (default: 120)\n");
     printf("  --beacon                Enable beaconing in ltp-recv mode\n");
+    printf("  --freq <MHz>            SDR transmit frequency (default: 144.850)\n");
+    printf("  --gain <0-89>           SDR transmit gain (default: 50)\n");
+    printf("  --sample-rate <Hz>      SDR sample rate (default: 480000)\n");
+    printf("  --deviation <Hz>        FM deviation (default: 3000)\n");
     printf("  --file <path>           Read payload from file (bp-send)\n");
     printf("  --outdir <dir>          Write received bundles to directory (bp-recv)\n");
     printf("  --lifetime <seconds>    Bundle lifetime (default: 3600)\n");
@@ -136,6 +149,7 @@ void print_usage(const char *prog)
     printf("  %s beacon --device /dev/ttyACM0 --callsign G4DPZ-1 --lat 52.467 --lon -2.022\n", prog);
     printf("  %s bp-send --device /dev/ttyACM0 --local dtn://g4dpz-1 --remote dtn://g4dpz-2 \"Hello BPv7\"\n", prog);
     printf("  %s bp-recv --device /dev/ttyACM0 --local dtn://g4dpz-2\n", prog);
+    printf("  %s sdr-beacon --callsign G4DPZ-1 --lat 52.467 --lon -2.022 --freq 144.850\n", prog);
 }
 
 /* ------------------------------------------------------------------ */
@@ -202,6 +216,10 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
     args->file_path = NULL;
     args->outdir = NULL;
     args->lifetime_sec = 3600;
+    args->sdr_freq = 144.850;
+    args->sdr_gain = 50;
+    args->sdr_sample_rate = 480000;
+    args->sdr_deviation = 3000.0;
 
     if (argc < 2)
         return 0;  /* No subcommand — caller will handle */
@@ -231,6 +249,8 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
         args->mode = CMD_MODE_BP_SEND;
     else if (strcmp(cmd, "bp-recv") == 0)
         args->mode = CMD_MODE_BP_RECV;
+    else if (strcmp(cmd, "sdr-beacon") == 0)
+        args->mode = CMD_MODE_SDR_BEACON;
     else {
         fprintf(stderr, "error: unknown command '%s'\n", cmd);
         return -1;
@@ -261,6 +281,10 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
         { "file",     required_argument, NULL, 'F' },
         { "outdir",   required_argument, NULL, 'P' },
         { "lifetime", required_argument, NULL, 'E' },
+        { "freq",     required_argument, NULL, 'f' },
+        { "gain",     required_argument, NULL, 'G' },
+        { "sample-rate", required_argument, NULL, 'S' },
+        { "deviation", required_argument, NULL, 'V' },
         { "verbose",  no_argument,       NULL, 'v' },
         { "help",     no_argument,       NULL, 'h' },
         { NULL, 0, NULL, 0 }
@@ -270,7 +294,7 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
     optind = 2;
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "d:s:D:t:T:l:c:o:i:L:R:m:w:r:C:A:O:M:B:bF:P:E:vh", long_opts, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "d:s:D:t:T:l:c:o:i:L:R:m:w:r:C:A:O:M:B:bF:P:E:f:G:S:V:vh", long_opts, NULL)) != -1) {
         switch (opt) {
         case 'd':
             args->device = optarg;
@@ -341,6 +365,18 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
         case 'E':
             args->lifetime_sec = atoi(optarg);
             break;
+        case 'f':
+            args->sdr_freq = strtod(optarg, NULL);
+            break;
+        case 'G':
+            args->sdr_gain = atoi(optarg);
+            break;
+        case 'S':
+            args->sdr_sample_rate = atoi(optarg);
+            break;
+        case 'V':
+            args->sdr_deviation = strtod(optarg, NULL);
+            break;
         case 'v':
             args->verbose = 1;
             break;
@@ -374,8 +410,8 @@ int validate_args(const cli_args_t *args)
         return -1;
     }
 
-    /* Device is always required */
-    if (!args->device) {
+    /* Device is required for all modes except sdr-beacon */
+    if (!args->device && args->mode != CMD_MODE_SDR_BEACON) {
         fprintf(stderr, "error: --device is required\n");
         return -1;
     }
@@ -466,6 +502,26 @@ int validate_args(const cli_args_t *args)
         args->beacon_enabled) {
         if (!args->beacon_callsign) {
             fprintf(stderr, "error: --callsign is required when --beacon is used\n");
+            return -1;
+        }
+    }
+
+    /* sdr-beacon validation */
+    if (args->mode == CMD_MODE_SDR_BEACON) {
+        if (!args->beacon_callsign) {
+            fprintf(stderr, "error: --callsign is required for sdr-beacon mode\n");
+            return -1;
+        }
+        if (args->sdr_freq < 144.0 || args->sdr_freq > 146.0) {
+            fprintf(stderr, "error: --freq must be 144.000-146.000 MHz\n");
+            return -1;
+        }
+        if (args->sdr_gain < 0 || args->sdr_gain > 89) {
+            fprintf(stderr, "error: --gain must be 0-89\n");
+            return -1;
+        }
+        if (args->beacon_interval < 10 || args->beacon_interval > 3600) {
+            fprintf(stderr, "error: --beacon-interval must be 10-3600\n");
             return -1;
         }
     }
@@ -1314,6 +1370,106 @@ int cmd_bp_send(int fd, const char *local_eid, const char *remote_eid,
 }
 
 /* ------------------------------------------------------------------ */
+/* run_sdr_beacon — APRS beacon via B200 mini SDR                      */
+/* ------------------------------------------------------------------ */
+#ifdef HAVE_UHD
+static int run_sdr_beacon(const cli_args_t *args)
+{
+    /* Build APRS position info field */
+    char position[BEACON_MAX_POSITION];
+    const char *comment = (args->beacon_comment && args->beacon_comment[0])
+                          ? args->beacon_comment : BEACON_DEFAULT_COMMENT;
+    int plen = beacon_build_position(args->beacon_lat, args->beacon_lon,
+                                      comment, position, sizeof(position));
+    if (plen < 0) {
+        fprintf(stderr, "error: failed to build APRS position\n");
+        return -1;
+    }
+
+    /* Build AX.25 UI frame */
+    uint8_t ax25_frame[AX25_HDR_LEN + AX25_MAX_INFO];
+    int frame_len = ax25_build_frame(BEACON_TOCALL, args->beacon_callsign,
+                                      (const uint8_t *)position, (size_t)plen,
+                                      ax25_frame, sizeof(ax25_frame));
+    if (frame_len < 0) {
+        fprintf(stderr, "error: failed to build AX.25 frame\n");
+        return -1;
+    }
+
+    /* Convert to bitstream: FCS + bit stuff + flags */
+    uint8_t bitstream[NRZI_MAX_BITS];
+    int num_bits = nrzi_frame_to_bitstream(ax25_frame, (size_t)frame_len,
+                                            bitstream, sizeof(bitstream));
+    if (num_bits < 0) {
+        fprintf(stderr, "error: failed to build bitstream\n");
+        return -1;
+    }
+
+    /* NRZI encode (initial state = 0 per lessons learned) */
+    uint8_t nrzi_bits[NRZI_MAX_BITS];
+    size_t nrzi_len = nrzi_encode(bitstream, (size_t)num_bits,
+                                   nrzi_bits, sizeof(nrzi_bits), 0);
+    if (nrzi_len == 0 && num_bits > 0) {
+        fprintf(stderr, "error: NRZI encoding failed\n");
+        return -1;
+    }
+
+    /* AFSK modulate */
+    static float audio[AFSK_MAX_SAMPLES];
+    int num_samples = afsk_modulate(nrzi_bits, nrzi_len,
+                                     audio, AFSK_MAX_SAMPLES);
+    if (num_samples < 0) {
+        fprintf(stderr, "error: AFSK modulation failed\n");
+        return -1;
+    }
+
+    /* Initialise UHD */
+    uhd_tx_state_t uhd;
+    double freq_hz = args->sdr_freq * 1e6;
+    if (uhd_tx_init(&uhd, freq_hz, args->sdr_gain,
+                     args->sdr_sample_rate, args->sdr_deviation,
+                     args->verbose) != 0) {
+        return -1;
+    }
+
+    printf("SDR beacon: %s on %.3f MHz, gain=%d, interval=%ds\n",
+           args->beacon_callsign, args->sdr_freq,
+           args->sdr_gain, args->beacon_interval);
+
+    /* Beacon loop */
+    struct timespec next_tx;
+    clock_gettime(CLOCK_MONOTONIC, &next_tx);
+
+    while (g_running) {
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+
+        if (now.tv_sec >= next_tx.tv_sec &&
+            (now.tv_sec > next_tx.tv_sec || now.tv_nsec >= next_tx.tv_nsec)) {
+            /* Transmit */
+            time_t wall = time(NULL);
+            struct tm *tm = localtime(&wall);
+            char ts[32];
+            strftime(ts, sizeof(ts), "%H:%M:%S", tm);
+            printf("[%s] Beacon: %s\n", ts, args->beacon_callsign);
+
+            if (uhd_tx_transmit(&uhd, audio, (size_t)num_samples) != 0)
+                fprintf(stderr, "warning: transmit failed\n");
+
+            next_tx.tv_sec += args->beacon_interval;
+        }
+
+        /* Sleep 100ms between checks */
+        usleep(100000);
+    }
+
+    uhd_tx_cleanup(&uhd);
+    printf("\nSDR beacon stopped.\n");
+    return 0;
+}
+#endif /* HAVE_UHD */
+
+/* ------------------------------------------------------------------ */
 /* main — parse CLI, open serial, configure TNC, dispatch, cleanup     */
 /* Requirements: 1.1, 1.2, 1.3, 8.1, 8.5                              */
 /* ------------------------------------------------------------------ */
@@ -1342,6 +1498,19 @@ int main(int argc, char *argv[])
     if (install_signal_handlers() != 0)
         return 1;
 
+    /* SDR beacon mode — no serial port needed */
+#ifdef HAVE_UHD
+    if (args.mode == CMD_MODE_SDR_BEACON) {
+        int rc = run_sdr_beacon(&args);
+        return (rc == 0) ? 0 : 1;
+    }
+#else
+    if (args.mode == CMD_MODE_SDR_BEACON) {
+        fprintf(stderr, "error: sdr-beacon requires UHD library (build with HAVE_UHD)\n");
+        return 1;
+    }
+#endif
+
     /* Parse device string to extract path and baud rate */
     char device_path[256];
     int  baud = 9600;
@@ -1362,6 +1531,7 @@ int main(int argc, char *argv[])
     case CMD_MODE_BEACON:   mode_str = "beacon";   break;
     case CMD_MODE_BP_SEND:  mode_str = "bp-send";  break;
     case CMD_MODE_BP_RECV:  mode_str = "bp-recv";  break;
+    case CMD_MODE_SDR_BEACON: mode_str = "sdr-beacon"; break;
     default: break;
     }
 
