@@ -1,5 +1,23 @@
 # Tools
 
+## DTN Link Simulator
+
+`sim/sim_link.py` creates a virtual serial link between two ION nodes using pseudo-terminals, with configurable delay, bandwidth, packet loss, and contact schedules. No radio hardware needed.
+
+```bash
+# Basic 1200 baud simulation
+python3 sim/sim_link.py --delay 0.05 --baud 1200 --loss 0.02 --verbose
+
+# Cislunar (Earth-Moon delay, periodic occlusion)
+python3 sim/sim_link.py --delay 1.25 --baud 9600 --schedule 2700:2700
+
+# Use the PTY devices shown in output with start scripts
+./scripts/start_node_a.sh /dev/pts/3
+./scripts/start_node_b.sh /dev/pts/4
+```
+
+See `sim/README.md` for full documentation and scenario examples.
+
 ## Wireshark KISS/AX.25/LTP Dissector
 
 `kiss_ltp_dissector.lua` is a Wireshark Lua plugin that decodes the KISS → AX.25 → LTP protocol stack used by `ionserialcla`.
