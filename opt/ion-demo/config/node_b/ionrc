@@ -1,5 +1,5 @@
 # ION Node B (ipn:2) - Destination/Relay
-1 2 ''
+1 2 ionconfig
 s
 a contact +1 +7200 2 1 10000
 a contact +1 +7200 1 2 10000

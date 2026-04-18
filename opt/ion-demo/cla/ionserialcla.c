@@ -275,6 +275,9 @@ int main(int argc, char *argv[]) {
     const char *dest_call = argv[3];
     uvast remoteEngineId = strtouvast(argv[4]);
 
+    /* Wait for ION to finish initializing before attaching */
+    sleep(2);
+
     /* Initialize LTP */
     if (ltpInit(0) < 0) {
         putErrmsg("ionserialcla can't initialize LTP.", NULL);

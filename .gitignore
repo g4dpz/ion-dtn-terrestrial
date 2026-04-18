@@ -43,3 +43,6 @@ opt/ion-demo/logs/
 *.swo
 *~
 .vscode/
+
+# Test WAV files
+*.wav
