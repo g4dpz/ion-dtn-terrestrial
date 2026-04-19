@@ -32,6 +32,7 @@ echo "════════════════════════�
 
 # Clean all ION state
 killm 2>/dev/null || true
+killall -9 ionserialcla ltpcli ltpclo bpclock bptransit ipnfw rfxclock ionwarn ltpmeter ltpdeliv udplsi bpadmin ltpadmin ionadmin ipnadmin 2>/dev/null || true
 rm -rf "$DATA"
 mkdir -p "$DATA"
 sleep 1
