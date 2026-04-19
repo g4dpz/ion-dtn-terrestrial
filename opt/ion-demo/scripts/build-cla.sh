@@ -1,0 +1,2 @@
+cd $HOME/dev/ion-dtn-terrestrial/opt/ion-demo/cla
+gcc -Wall -Wextra -O2   -I$HOME/dev/ION-DTN/ici/include   -I$HOME/dev/ION-DTN/ltp/include   -I$HOME/dev/ION-DTN/ltp/library   -o ionserialcla ionserialcla.c   -L/usr/local/lib -lltp -lici -lpthread
