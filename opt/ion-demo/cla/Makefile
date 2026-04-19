@@ -3,7 +3,7 @@ CFLAGS = -Wall -Wextra -O2
 
 ION_DIR ?= $(shell cd ../../ION-DTN 2>/dev/null && pwd || cd ../../../ION-DTN 2>/dev/null && pwd)
 ION_INC = -I$(ION_DIR)/ici/include -I$(ION_DIR)/ltp/include -I$(ION_DIR)/ltp/library -I$(ION_DIR)/ltp/udp
-ION_LIB = -L$(ION_DIR)/.libs -lltp -lici -lpthread
+ION_LIB = -L$(ION_DIR)/.libs -lltp -lici -lpthread -lm
 
 all: ionserialcla
 

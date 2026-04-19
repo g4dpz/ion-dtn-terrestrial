@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# start_node_a.sh - Start ION Node A with integrated serial CLA
+# start_node_a.sh - Start ION Node A with integrated serial CLA and APRS beacon
 #
 # Usage: ./start_node_a.sh <serial_device>
 #
@@ -11,45 +11,60 @@ DEVICE="${1:?Usage: $0 <serial_device>}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-ION_BIN="${ION_BIN:-$(cd "$PROJECT_DIR/../../ION-DTN/.libs" 2>/dev/null && pwd)}"
 CLA_DIR="$PROJECT_DIR/cla"
 CONFIG="$PROJECT_DIR/config/node_a"
 DATA="/tmp/ion_node_a"
 
-export PATH="$CLA_DIR:$ION_BIN:$PATH"
-export DYLD_LIBRARY_PATH="$ION_BIN:${DYLD_LIBRARY_PATH:-}"
-export LD_LIBRARY_PATH="$ION_BIN:${LD_LIBRARY_PATH:-}"
+export PATH="$CLA_DIR:$PATH"
+
+# APRS beacon configuration
+export ION_SERIAL_BEACON_LAT=52.467
+export ION_SERIAL_BEACON_LON=-2.022
+export ION_SERIAL_BEACON_INTERVAL=120
+export ION_SERIAL_BEACON_COMMENT="github.com/g4dpz/ion-dtn-terrestrial"
 
 echo "════════════════════════════════════════════════════"
 echo "  Starting ION Node A (ipn:1) - G4DPZ-1"
 echo "  Device: $DEVICE"
-echo "  CLA: ionserialcla (integrated, with backpressure)"
+echo "  CLA: ionserialcla (with APRS beacon)"
+echo "  Beacon: G4DPZ-1 every ${ION_SERIAL_BEACON_INTERVAL}s"
 echo "════════════════════════════════════════════════════"
 
-# Hard clean all ION state
-ionstop 2>/dev/null || true
+# Clean all ION state
 killm 2>/dev/null || true
 rm -rf "$DATA"
-rm -f /tmp/ion.sdrlog /tmp/ion.sdrxnlog /tmp/*.ionlock /tmp/ion.*.sdrlog
 mkdir -p "$DATA"
 sleep 1
 
 # Prepare config with actual device path
 sed "s|DEVICE|$DEVICE|g" "$CONFIG/ltprc" > "$DATA/ltprc"
-cp "$CONFIG"/{ionrc,bprc,ipnrc} "$DATA/"
+cp "$CONFIG"/ionrc "$DATA/"
+cp "$CONFIG"/ionconfig "$DATA/"
+cp "$CONFIG"/bprc "$DATA/"
+cp "$CONFIG"/ipnrc "$DATA/"
 
-# Start ION — ionserialcla is invoked by ION automatically
+# Start ION
 echo "Starting ION..."
 cd "$DATA"
 ionadmin ionrc
+ionsecadmin <<< "1"
 ltpadmin ltprc
 bpadmin bprc
 ipnadmin ipnrc
 
+# Verify CLA is running
+sleep 3
+if pgrep -f ionserialcla > /dev/null; then
+    echo "  ionserialcla: running"
+else
+    echo "  WARNING: ionserialcla not running — check ion.log"
+fi
+
 echo ""
 echo "════════════════════════════════════════════════════"
 echo "  Node A running."
-echo "  Send:    bpsendfile ipn:1.1 ipn:2.1 <file>"
-echo "  Receive: bprecvfile ipn:1.1 1"
-echo "  Stop:    ionstop"
+echo "  Send text:  bpsource ipn:2.1 \"Hello\""
+echo "  Send file:  bpsendfile ipn:1.2 ipn:2.2 <file>"
+echo "  Recv file:  bprecvfile ipn:1.2"
+echo "  Stop:       ionstop"
 echo "════════════════════════════════════════════════════"

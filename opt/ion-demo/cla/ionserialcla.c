@@ -28,6 +28,7 @@
 #include <stdint.h>
 #include <ctype.h>
 #include <stdarg.h>
+#include <math.h>
 
 #define FEND  0xC0
 #define FESC  0xDB
@@ -266,6 +267,8 @@ static void shutDown(int signum) {
 int main(int argc, char *argv[]) {
     if (argc < 5) {
         PUTS("Usage: ionserialcla <dev>:<baud> <src_call> <dest_call> <remote_engine_id>");
+        PUTS("  Beacon env vars: ION_SERIAL_BEACON_LAT, ION_SERIAL_BEACON_LON");
+        PUTS("  ION_SERIAL_BEACON_INTERVAL (default 120s), ION_SERIAL_BEACON_COMMENT");
         return 0;
     }
 
@@ -345,6 +348,67 @@ int main(int argc, char *argv[]) {
     /* TX loop: dequeue segments from ION, AX.25/KISS encode, write serial */
     uint64_t tx_count = 0;
     uint8_t ax25_frame[MAX_AX25];
+
+    /* APRS beacon support — configured via environment variables */
+    int beacon_enabled = 0;
+    uint8_t beacon_kiss[600];
+    int beacon_kiss_len = 0;
+    int beacon_interval = 120;
+    struct timespec beacon_last;
+    clock_gettime(CLOCK_MONOTONIC, &beacon_last);
+
+    {
+        const char *lat_env = getenv("ION_SERIAL_BEACON_LAT");
+        const char *lon_env = getenv("ION_SERIAL_BEACON_LON");
+        const char *int_env = getenv("ION_SERIAL_BEACON_INTERVAL");
+        const char *cmt_env = getenv("ION_SERIAL_BEACON_COMMENT");
+
+        if (lat_env && lon_env) {
+            double lat = atof(lat_env);
+            double lon = atof(lon_env);
+            if (int_env) beacon_interval = atoi(int_env);
+            if (beacon_interval < 10) beacon_interval = 10;
+            const char *comment = cmt_env ? cmt_env : "github.com/g4dpz/ion-dtn-terrestrial";
+
+            /* Format APRS position: !DDMM.MMN/DDDMM.MMW-comment */
+            char hemi_lat = (lat >= 0) ? 'N' : 'S';
+            char hemi_lon = (lon >= 0) ? 'E' : 'W';
+            double alat = fabs(lat), alon = fabs(lon);
+            int dlat = (int)alat, dlon = (int)alon;
+            double mlat = (alat - dlat) * 60.0, mlon = (alon - dlon) * 60.0;
+
+            char info[256];
+            int ilen = snprintf(info, sizeof(info),
+                "!%02d%05.2f%c/%03d%05.2f%c-%s",
+                dlat, mlat, hemi_lat, dlon, mlon, hemi_lon, comment);
+
+            /* Build AX.25 frame: dst=APZ001, src=our callsign */
+            uint8_t bcn_ax25[AX25_HDR + 256];
+            int bcn_len = build_ax25("APZ001", src_call,
+                                      (uint8_t *)info, (size_t)ilen,
+                                      bcn_ax25, sizeof(bcn_ax25));
+            if (bcn_len > 0) {
+                /* KISS encode */
+                uint8_t kf[600]; size_t ki = 0;
+                kf[ki++] = FEND; kf[ki++] = 0x00;
+                for (int i = 0; i < bcn_len; i++) {
+                    if (bcn_ax25[i] == FEND) { kf[ki++] = FESC; kf[ki++] = TFEND; }
+                    else if (bcn_ax25[i] == FESC) { kf[ki++] = FESC; kf[ki++] = TFESC; }
+                    else kf[ki++] = bcn_ax25[i];
+                }
+                kf[ki++] = FEND;
+                memcpy(beacon_kiss, kf, ki);
+                beacon_kiss_len = (int)ki;
+                beacon_enabled = 1;
+
+                char msg[256];
+                isprintf(msg, sizeof(msg),
+                    "[i] ionserialcla: beacon enabled for %s every %ds",
+                    src_call, beacon_interval);
+                writeMemo(msg);
+            }
+        }
+    }
 
     while (g_running && !(sm_SemEnded(vspan->segSemaphore))) {
         char *segment;
@@ -440,6 +504,23 @@ int main(int argc, char *argv[]) {
         }
 
         sm_TaskYield();
+
+        /* Check if APRS beacon is due */
+        if (beacon_enabled) {
+            struct timespec now;
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            int elapsed = (int)(now.tv_sec - beacon_last.tv_sec);
+            if (elapsed >= beacon_interval) {
+                ssize_t bw = write(serial_fd, beacon_kiss, (size_t)beacon_kiss_len);
+                if (bw > 0) tcdrain(serial_fd);
+                beacon_last = now;
+                char msg[128];
+                isprintf(msg, sizeof(msg),
+                    "[i] ionserialcla: Beacon TX: %s", src_call);
+                writeMemo(msg);
+                dbg("[DBG] Beacon TX: %d bytes", beacon_kiss_len);
+            }
+        }
     }
 
     /* Shutdown */
