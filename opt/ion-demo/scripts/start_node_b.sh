@@ -38,7 +38,7 @@ mkdir -p "$DATA"
 sleep 1
 
 # Prepare config with actual device path
-sed "s|DEVICE|$DEVICE|g" "$CONFIG/ltprc" > "$DATA/ltprc"
+sed "s|ionserialcla [^ ]*:|ionserialcla $DEVICE:|g" "$CONFIG/ltprc" > "$DATA/ltprc"
 cp "$CONFIG"/ionrc "$DATA/"
 cp "$CONFIG"/ionconfig "$DATA/"
 cp "$CONFIG"/bprc "$DATA/"

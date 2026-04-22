@@ -160,9 +160,22 @@ static int kiss_send(int fd, const uint8_t *data, size_t len) {
     int drain_rc = tcdrain(fd);
     if (drain_rc < 0) {
         dbg("[DBG] kiss_send: tcdrain failed errno=%d (%s)", errno, strerror(errno));
-        /* Don't treat tcdrain failure as fatal — some TNCs don't support it */
     }
     dbg("[DBG] kiss_send: tcdrain returned %d", drain_rc);
+
+    /* Post-transmit delay: wait for TNC to finish RF transmission.
+     * At 1200 baud, each byte takes ~8.3ms over the air.
+     * Add TX-tail time (300ms default) for PTT release. */
+    {
+        int rf_baud = 1200;
+        const char *rfenv = getenv("ION_SERIAL_RF_BAUD");
+        if (rfenv) rf_baud = atoi(rfenv);
+        if (rf_baud <= 0) rf_baud = 1200;
+        int us_per_byte = (10 * 1000000) / rf_baud;
+        int delay_us = (int)idx * us_per_byte + 400000; /* frame time + 400ms margin */
+        dbg("[DBG] kiss_send: post-TX delay %d ms", delay_us / 1000);
+        usleep((useconds_t)delay_us);
+    }
     return (int)idx;
 }
 
@@ -465,48 +478,6 @@ int main(int argc, char *argv[]) {
                 "[i] ionserialcla: TX #%llu LTP(%d)->AX25(%d)->KISS(%d)",
                 (unsigned long long)tx_count, segmentLength, ax25_len, kiss_len);
             writeMemo(msg);
-        }
-
-        /*
-         * TX pacing: wait for the radio to actually transmit the frame.
-         * tcdrain only waits for the UART→TNC transfer, not RF TX.
-         * The serial baud rate (e.g. 9600) is TNC↔host; the actual
-         * RF rate is typically 1200 baud for packet radio.
-         * At 1200 baud: ~8.3ms/byte over the air.
-         * Add 100ms for TNC TX-delay / TX-tail / turnaround.
-         * Override RF rate via ION_SERIAL_RF_BAUD env var (default 1200).
-         * Override total delay via ION_SERIAL_TX_DELAY_MS env var.
-         */
-        {
-            static int rf_baud = 0;
-            static int fixed_delay = 0;
-            if (rf_baud == 0) {
-                const char *d = getenv("ION_SERIAL_TX_DELAY_MS");
-                if (d) {
-                    fixed_delay = atoi(d);
-                }
-                const char *rfenv = getenv("ION_SERIAL_RF_BAUD");
-                rf_baud = rfenv ? atoi(rfenv) : 1200;
-                if (rf_baud <= 0) rf_baud = 1200;
-                {
-                    char msg[128];
-                    isprintf(msg, sizeof(msg),
-                        "[i] ionserialcla: TX pacing rf_baud=%d fixed_delay=%d",
-                        rf_baud, fixed_delay);
-                    writeMemo(msg);
-                }
-            }
-            int delay_ms;
-            if (fixed_delay > 0) {
-                delay_ms = fixed_delay;
-            } else {
-                /* Per-frame delay based on actual frame size and RF baud */
-                int us_per_byte = (10 * 1000000) / rf_baud; /* 10 bits/byte */
-                delay_ms = (kiss_len * us_per_byte) / 1000 + 100;
-            }
-            dbg("[DBG] TX: pacing delay %d ms (frame %d bytes @ %d baud)",
-                delay_ms, kiss_len, rf_baud);
-            usleep(delay_ms * 1000);
         }
 
         sm_TaskYield();
