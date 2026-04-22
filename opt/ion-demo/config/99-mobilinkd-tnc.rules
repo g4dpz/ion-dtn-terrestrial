@@ -1,0 +1,14 @@
+# Mobilinkd TNC3/TNC4 — stable /dev/tnc symlink
+# Install: sudo cp 99-mobilinkd-tnc.rules /etc/udev/rules.d/
+# Reload:  sudo udevadm control --reload-rules && sudo udevadm trigger
+#
+# The TNC may reconnect as ttyACM1 or ttyACM2 after a USB reset.
+# This rule creates a stable /dev/tnc symlink regardless of the
+# enumerated device number.
+#
+# Mobilinkd TNC3 USB IDs: idVendor=16d0, idProduct=0e93
+# Mobilinkd TNC4 USB IDs: idVendor=16d0, idProduct=0e94
+# Adjust if your device has different IDs (check with: lsusb)
+
+SUBSYSTEM=="tty", ATTRS{idVendor}=="16d0", ATTRS{idProduct}=="0e93", SYMLINK+="tnc", MODE="0666"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="16d0", ATTRS{idProduct}=="0e94", SYMLINK+="tnc", MODE="0666"

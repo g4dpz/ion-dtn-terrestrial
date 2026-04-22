@@ -190,7 +190,8 @@ static int kiss_send(int fd, const uint8_t *data, size_t len) {
         if (rfenv) rf_baud = atoi(rfenv);
         if (rf_baud <= 0) rf_baud = 1200;
         int us_per_byte = (10 * 1000000) / rf_baud;
-        int delay_us = (int)idx * us_per_byte + 400000; /* frame time + 400ms margin */
+        /* Total delay: RF TX time + TX-delay (500ms) + TX-tail (300ms) + margin */
+        int delay_us = (int)idx * us_per_byte + 1000000;
         dbg("[DBG] kiss_send: post-TX delay %d ms", delay_us / 1000);
         usleep((useconds_t)delay_us);
     }
@@ -230,6 +231,9 @@ static int parse_device(const char *arg, char *dev, size_t ds, int *baud) {
 typedef struct {
     int serial_fd;
     int running;
+    char device[256];
+    int baud;
+    pthread_mutex_t fd_lock;
 } RxThreadParms;
 
 static void *rx_thread(void *parm) {
@@ -240,8 +244,24 @@ static void *rx_thread(void *parm) {
     uint64_t count = 0;
 
     while (rtp->running) {
-        ssize_t n = read(rtp->serial_fd, rbuf, sizeof(rbuf));
-        if (n < 0) { if (errno == EINTR) continue; dbg("[DBG] RX: read error errno=%d (%s)", errno, strerror(errno)); break; }
+        int fd;
+        pthread_mutex_lock(&rtp->fd_lock);
+        fd = rtp->serial_fd;
+        pthread_mutex_unlock(&rtp->fd_lock);
+
+        if (fd < 0) { usleep(500000); continue; }
+
+        ssize_t n = read(fd, rbuf, sizeof(rbuf));
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            if (errno == EIO) {
+                dbg("[DBG] RX: EIO on read, waiting for TX to reopen port");
+                usleep(500000);
+                continue;
+            }
+            dbg("[DBG] RX: read error errno=%d (%s)", errno, strerror(errno));
+            break;
+        }
         if (n == 0) continue;
 
         dbg("[DBG] RX: read %zd bytes from serial", n);
@@ -365,6 +385,10 @@ int main(int argc, char *argv[]) {
     RxThreadParms rtp;
     rtp.serial_fd = serial_fd;
     rtp.running = 1;
+    strncpy(rtp.device, device, sizeof(rtp.device) - 1);
+    rtp.device[sizeof(rtp.device) - 1] = '\0';
+    rtp.baud = baud;
+    pthread_mutex_init(&rtp.fd_lock, NULL);
     pthread_t rx_tid;
     if (pthread_begin(&rx_tid, NULL, rx_thread, &rtp, "ionserialcla_rx")) {
         putSysErrmsg("Can't create RX thread", NULL);
@@ -480,10 +504,28 @@ int main(int argc, char *argv[]) {
         int kiss_len = kiss_send(serial_fd, ax25_frame, ax25_len);
         if (kiss_len < 0) {
             char errmsg[128];
-            isprintf(errmsg, sizeof(errmsg),
-                "[w] ionserialcla: serial write failed (errno=%d), retrying", errno);
+            snprintf(errmsg, sizeof(errmsg),
+                "[w] ionserialcla: serial write failed, reopening port");
             writeMemo(errmsg);
-            usleep(500000);  /* Wait 500ms before retrying */
+
+            /* Mark fd invalid so RX thread stops reading */
+            pthread_mutex_lock(&rtp.fd_lock);
+            rtp.serial_fd = -1;
+            pthread_mutex_unlock(&rtp.fd_lock);
+
+            close(serial_fd);
+            usleep(2000000);  /* Wait 2s for TNC to recover */
+            serial_fd = open_serial(device, baud);
+            if (serial_fd < 0) {
+                writeMemo("[!] ionserialcla: cannot reopen serial port, exiting");
+                g_running = 0;
+            } else {
+                /* Update shared fd so RX thread uses the new one */
+                pthread_mutex_lock(&rtp.fd_lock);
+                rtp.serial_fd = serial_fd;
+                pthread_mutex_unlock(&rtp.fd_lock);
+                writeMemo("[i] ionserialcla: serial port reopened successfully");
+            }
             continue;
         }
 
@@ -522,6 +564,7 @@ int main(int argc, char *argv[]) {
     dbg("[DBG] Shutting down, tx_count=%llu", (unsigned long long)tx_count);
     rtp.running = 0;
     pthread_join(rx_tid, NULL);
+    pthread_mutex_destroy(&rtp.fd_lock);
     close(serial_fd);
     writeErrmsgMemos();
     writeMemo("[i] ionserialcla has ended.");

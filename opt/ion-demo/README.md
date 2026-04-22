@@ -77,6 +77,17 @@ opt/ion-demo/
 - Linux host with ION-DTN compiled (Ubuntu laptop, Raspberry Pi)
 - USB cable from TNC to host
 
+## Stable Device Naming (udev)
+
+The TNC may reconnect as `/dev/ttyACM1` after a USB reset. Install the udev rule for a stable `/dev/tnc` symlink:
+
+```bash
+sudo cp opt/ion-demo/config/99-mobilinkd-tnc.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+Then use `/dev/tnc` instead of `/dev/ttyACM0` in all commands and configs. The symlink follows the TNC regardless of which ACM number it gets.
+
 ## Prerequisites
 
 - ION-DTN built and installed (`make && sudo make install && sudo ldconfig`)
