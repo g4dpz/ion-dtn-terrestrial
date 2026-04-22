@@ -155,10 +155,14 @@ static int kiss_send(int fd, const uint8_t *data, size_t len) {
     dbg("[DBG] kiss_send: KISS frame %zu bytes", idx);
     dbg_hex("kiss_send KISS frame", frame, idx);
     size_t w=0;
-    while(w<idx){ssize_t n=write(fd,frame+w,idx-w);if(n<0){if(errno==EINTR)continue;dbg("[DBG] kiss_send: write error errno=%d (%s)", errno, strerror(errno));return -1;}dbg("[DBG] kiss_send: wrote %zd bytes (total %zu/%zu)", n, w+n, idx);w+=n;}
+    while(w<idx){ssize_t n=write(fd,frame+w,idx-w);if(n<0){if(errno==EINTR)continue;if(errno==EAGAIN||errno==EWOULDBLOCK){usleep(10000);continue;}dbg("[DBG] kiss_send: write error errno=%d (%s)", errno, strerror(errno));return -1;}dbg("[DBG] kiss_send: wrote %zd bytes (total %zu/%zu)", n, w+n, idx);w+=n;}
     dbg("[DBG] kiss_send: calling tcdrain...");
-    tcdrain(fd); /* BACKPRESSURE: blocks until TNC has transmitted */
-    dbg("[DBG] kiss_send: tcdrain returned");
+    int drain_rc = tcdrain(fd);
+    if (drain_rc < 0) {
+        dbg("[DBG] kiss_send: tcdrain failed errno=%d (%s)", errno, strerror(errno));
+        /* Don't treat tcdrain failure as fatal — some TNCs don't support it */
+    }
+    dbg("[DBG] kiss_send: tcdrain returned %d", drain_rc);
     return (int)idx;
 }
 
@@ -444,9 +448,11 @@ int main(int argc, char *argv[]) {
         /* KISS encode and write to serial — tcdrain provides backpressure */
         int kiss_len = kiss_send(serial_fd, ax25_frame, ax25_len);
         if (kiss_len < 0) {
-            putErrmsg("Serial write failed.", NULL);
-            dbg("[DBG] TX: kiss_send FAILED");
-            g_running = 0;
+            char errmsg[128];
+            isprintf(errmsg, sizeof(errmsg),
+                "[w] ionserialcla: serial write failed (errno=%d), retrying", errno);
+            writeMemo(errmsg);
+            usleep(500000);  /* Wait 500ms before retrying */
             continue;
         }
 
