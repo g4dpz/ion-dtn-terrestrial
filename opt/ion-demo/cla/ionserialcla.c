@@ -95,16 +95,16 @@ static speed_t baud_speed(int b) {
     case 57600:return B57600;case 115200:return B115200;default:return B9600;}
 }
 static int open_serial(const char *dev, int baud) {
-    int fd=open(dev,O_RDWR|O_NOCTTY|O_NONBLOCK);
+    int fd=open(dev,O_RDWR|O_NOCTTY);
     if(fd<0){putSysErrmsg("Can't open serial device",dev);return -1;}
-    int fl=fcntl(fd,F_GETFL,0); fcntl(fd,F_SETFL,fl&~O_NONBLOCK);
-    struct termios t; memset(&t,0,sizeof(t));
+    struct termios t;
+    memset(&t,0,sizeof(t));
     if(tcgetattr(fd,&t)!=0){close(fd);return -1;}
+    cfmakeraw(&t);
+    t.c_cflag&=~(CSIZE|PARENB|CSTOPB|CRTSCTS);
+    t.c_cflag|=CS8|CLOCAL|CREAD;
+    t.c_cc[VMIN]=1; t.c_cc[VTIME]=0;
     cfsetospeed(&t,baud_speed(baud)); cfsetispeed(&t,baud_speed(baud));
-    t.c_cflag=(t.c_cflag&~CSIZE)|CS8;
-    t.c_cflag&=~(PARENB|PARODD|CSTOPB|CRTSCTS); t.c_cflag|=CLOCAL|CREAD;
-    t.c_iflag&=~(IXON|IXOFF|IXANY|IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL);
-    t.c_lflag=0; t.c_oflag=0; t.c_cc[VMIN]=1; t.c_cc[VTIME]=10;
     if(tcsetattr(fd,TCSANOW,&t)!=0){close(fd);return -1;}
     tcflush(fd,TCIOFLUSH);
     dbg("[DBG] Serial opened: fd=%d dev=%s baud=%d", fd, dev, baud);
@@ -155,7 +155,25 @@ static int kiss_send(int fd, const uint8_t *data, size_t len) {
     dbg("[DBG] kiss_send: KISS frame %zu bytes", idx);
     dbg_hex("kiss_send KISS frame", frame, idx);
     size_t w=0;
-    while(w<idx){ssize_t n=write(fd,frame+w,idx-w);if(n<0){if(errno==EINTR)continue;if(errno==EAGAIN||errno==EWOULDBLOCK){usleep(10000);continue;}dbg("[DBG] kiss_send: write error errno=%d (%s)", errno, strerror(errno));return -1;}dbg("[DBG] kiss_send: wrote %zd bytes (total %zu/%zu)", n, w+n, idx);w+=n;}
+    int retries = 0;
+    while(w<idx){
+        ssize_t n=write(fd,frame+w,idx-w);
+        if(n<0){
+            if(errno==EINTR)continue;
+            if(errno==EAGAIN||errno==EWOULDBLOCK){usleep(10000);continue;}
+            if(errno==EIO && retries < 10){
+                retries++;
+                dbg("[DBG] kiss_send: EIO on write, retry %d/10 after 500ms", retries);
+                usleep(500000);
+                continue;
+            }
+            dbg("[DBG] kiss_send: write error errno=%d (%s)", errno, strerror(errno));
+            return -1;
+        }
+        retries = 0;
+        dbg("[DBG] kiss_send: wrote %zd bytes (total %zu/%zu)", n, w+n, idx);
+        w+=n;
+    }
     dbg("[DBG] kiss_send: calling tcdrain...");
     int drain_rc = tcdrain(fd);
     if (drain_rc < 0) {
