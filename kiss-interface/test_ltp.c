@@ -1042,8 +1042,8 @@ static int test_max_import_sessions(void)
     return 1;
 }
 
-/* Test: 1024-byte block accepted by ltp_send_block */
-static int test_block_1024_accepted(void)
+/* Test: 2048-byte block accepted by ltp_send_block */
+static int test_block_2048_accepted(void)
 {
     ltp_engine_t eng;
     ltp_config_t cfg;
@@ -1054,7 +1054,7 @@ static int test_block_1024_accepted(void)
     cfg.max_retries = LTP_DEFAULT_MAX_RETRIES;
     ltp_engine_init(&eng, "dtn://test", &cfg);
 
-    uint8_t data[1024];
+    uint8_t data[2048];
     memset(data, 0xAB, sizeof(data));
 
     int pipefd[2];
@@ -1063,19 +1063,19 @@ static int test_block_1024_accepted(void)
         return 0;
     }
 
-    int rc = ltp_send_block(&eng, pipefd[1], "dtn://remote", data, 1024);
+    int rc = ltp_send_block(&eng, pipefd[1], "dtn://remote", data, 2048);
     close(pipefd[0]);
     close(pipefd[1]);
 
     if (rc != 0) {
-        printf("\n    FAIL: 1024-byte block returned %d, expected 0\n", rc);
+        printf("\n    FAIL: 2048-byte block returned %d, expected 0\n", rc);
         return 0;
     }
     return 1;
 }
 
-/* Test: 1025-byte block rejected by ltp_send_block */
-static int test_block_1025_rejected(void)
+/* Test: 2049-byte block rejected by ltp_send_block */
+static int test_block_2049_rejected(void)
 {
     ltp_engine_t eng;
     ltp_config_t cfg;
@@ -1086,7 +1086,7 @@ static int test_block_1025_rejected(void)
     cfg.max_retries = LTP_DEFAULT_MAX_RETRIES;
     ltp_engine_init(&eng, "dtn://test", &cfg);
 
-    uint8_t data[1025];
+    uint8_t data[2049];
     memset(data, 0xAB, sizeof(data));
 
     int pipefd[2];
@@ -1095,12 +1095,12 @@ static int test_block_1025_rejected(void)
         return 0;
     }
 
-    int rc = ltp_send_block(&eng, pipefd[1], "dtn://remote", data, 1025);
+    int rc = ltp_send_block(&eng, pipefd[1], "dtn://remote", data, 2049);
     close(pipefd[0]);
     close(pipefd[1]);
 
     if (rc != -1) {
-        printf("\n    FAIL: 1025-byte block returned %d, expected -1\n", rc);
+        printf("\n    FAIL: 2049-byte block returned %d, expected -1\n", rc);
         return 0;
     }
     return 1;
@@ -2571,8 +2571,8 @@ int main(void)
     TEST(type2_eorp_checkpoint);
     TEST(max_export_sessions);
     TEST(max_import_sessions);
-    TEST(block_1024_accepted);
-    TEST(block_1025_rejected);
+    TEST(block_2048_accepted);
+    TEST(block_2049_rejected);
     TEST(report_ack_on_report);
     TEST(export_session_closed_after_full_report);
     TEST(import_session_delivers_and_closes);

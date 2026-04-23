@@ -16,7 +16,7 @@
 /* ---- Configuration constants ---- */
 #define LTP_MAX_EXPORT_SESSIONS  128
 #define LTP_MAX_IMPORT_SESSIONS  128
-#define LTP_MAX_BLOCK_SIZE       1024
+#define LTP_MAX_BLOCK_SIZE       2048
 #define LTP_DEFAULT_SEGMENT_MTU  64
 #define LTP_DEFAULT_OWLT_MS      1500
 #define LTP_DEFAULT_MAX_RETRIES  7

@@ -8,7 +8,8 @@
  * are fully implemented. Other functions are stubs returning -1 or 0.
  */
 
-#define _POSIX_C_SOURCE 199309L
+#define _POSIX_C_SOURCE 200809L
+#define _DEFAULT_SOURCE
 
 #include "ltp.h"
 #include "sdnv.h"
@@ -753,6 +754,25 @@ int ltp_segment_block(ltp_engine_t *eng, uint64_t remote_engine_id,
 /* ================================================================== */
 
 /*
+ * ltp_paced_write — write a KISS frame and wait for RF TX to complete.
+ * At 1200 baud, each byte takes ~8.3ms over the air.
+ * Adds TX-delay(500ms) + TX-tail(300ms) + 700ms margin = 1500ms fixed.
+ * Only paces on real serial ports (tty); pipes/files write immediately.
+ */
+static int ltp_paced_write(int fd, const uint8_t *kiss_buf, int kiss_len)
+{
+    if (fd < 0 || kiss_len <= 0) return -1;
+    ssize_t wr = write(fd, kiss_buf, (size_t)kiss_len);
+    if (wr < 0) return -1;
+    if (isatty(fd)) {
+        tcdrain(fd);
+        int rf_us = kiss_len * 8333 + 1500000;
+        usleep((useconds_t)rf_us);
+    }
+    return 0;
+}
+
+/*
  * Callback context for ltp_send_block — writes KISS-encoded segments to fd.
  */
 typedef struct {
@@ -774,9 +794,8 @@ static void send_block_cb(const ltp_data_segment_t *seg, void *ctx)
                                kiss_buf, sizeof(kiss_buf));
     if (kiss_len < 0) { sctx->error = 1; return; }
 
-    ssize_t written = write(sctx->fd, kiss_buf, (size_t)kiss_len);
-    if (written < 0) { sctx->error = 1; return; }
-    tcdrain(sctx->fd);
+    if (ltp_paced_write(sctx->fd, kiss_buf, kiss_len) < 0)
+        sctx->error = 1;
 }
 
 int ltp_send_block(ltp_engine_t *eng, int fd,
@@ -916,8 +935,7 @@ static int ltp_retransmit_missing(ltp_engine_t *eng, int fd,
                 int kiss_len = kiss_encode(ltp_buf, (size_t)enc_len,
                                            kiss_buf, sizeof(kiss_buf));
                 if (kiss_len > 0) {
-                    ssize_t wr = write(fd, kiss_buf, (size_t)kiss_len);
-                    (void)wr;
+                    ltp_paced_write(fd, kiss_buf, kiss_len);
                     eng->segments_sent++;
                 }
             }
@@ -1055,8 +1073,7 @@ int ltp_process_segment(ltp_engine_t *eng, int fd,
                 int kiss_len = kiss_encode(rpt_buf, (size_t)rpt_len,
                                            kiss_buf, sizeof(kiss_buf));
                 if (kiss_len > 0) {
-                    ssize_t wr = write(fd, kiss_buf, (size_t)kiss_len);
-                    (void)wr;
+                    ltp_paced_write(fd, kiss_buf, kiss_len);
                     eng->segments_sent++;
                 }
             }
@@ -1117,8 +1134,7 @@ int ltp_process_segment(ltp_engine_t *eng, int fd,
             int kiss_len = kiss_encode(ack_buf, (size_t)ack_len,
                                        kiss_buf, sizeof(kiss_buf));
             if (kiss_len > 0) {
-                ssize_t wr = write(fd, kiss_buf, (size_t)kiss_len);
-                (void)wr;
+                ltp_paced_write(fd, kiss_buf, kiss_len);
                 eng->segments_sent++;
             }
         }
@@ -1196,8 +1212,7 @@ int ltp_process_segment(ltp_engine_t *eng, int fd,
             int kiss_len = kiss_encode(ack_buf, (size_t)ack_len,
                                        kiss_buf, sizeof(kiss_buf));
             if (kiss_len > 0) {
-                ssize_t wr = write(fd, kiss_buf, (size_t)kiss_len);
-                (void)wr;
+                ltp_paced_write(fd, kiss_buf, kiss_len);
                 eng->segments_sent++;
             }
         }
@@ -1257,8 +1272,7 @@ int ltp_process_segment(ltp_engine_t *eng, int fd,
             int kiss_len = kiss_encode(ack_buf, (size_t)ack_len,
                                        kiss_buf, sizeof(kiss_buf));
             if (kiss_len > 0) {
-                ssize_t wr = write(fd, kiss_buf, (size_t)kiss_len);
-                (void)wr;
+                ltp_paced_write(fd, kiss_buf, kiss_len);
                 eng->segments_sent++;
             }
         }
@@ -1423,8 +1437,7 @@ int ltp_fire_expired_timers(ltp_engine_t *eng, int fd)
                     int kiss_len = kiss_encode(ltp_buf, (size_t)enc_len,
                                                kiss_buf, sizeof(kiss_buf));
                     if (kiss_len > 0) {
-                        ssize_t wr = write(fd, kiss_buf, (size_t)kiss_len);
-                        (void)wr;
+                        ltp_paced_write(fd, kiss_buf, kiss_len);
                         eng->segments_sent++;
                     }
                 }
@@ -1462,8 +1475,7 @@ int ltp_fire_expired_timers(ltp_engine_t *eng, int fd)
                     int kiss_len = kiss_encode(rpt_buf, (size_t)rpt_len,
                                                kiss_buf, sizeof(kiss_buf));
                     if (kiss_len > 0) {
-                        ssize_t wr = write(fd, kiss_buf, (size_t)kiss_len);
-                        (void)wr;
+                        ltp_paced_write(fd, kiss_buf, kiss_len);
                         eng->segments_sent++;
                     }
                 }
@@ -1485,8 +1497,7 @@ int ltp_fire_expired_timers(ltp_engine_t *eng, int fd)
                 int kiss_len = kiss_encode(cancel_buf, (size_t)cancel_len,
                                            kiss_buf, sizeof(kiss_buf));
                 if (kiss_len > 0) {
-                    ssize_t wr = write(fd, kiss_buf, (size_t)kiss_len);
-                    (void)wr;
+                    ltp_paced_write(fd, kiss_buf, kiss_len);
                     eng->segments_sent++;
                 }
             }
@@ -1655,8 +1666,7 @@ int ltp_cancel_session(ltp_engine_t *eng, int fd,
         uint8_t kiss_buf[LTP_MAX_SEGMENT_BUF * 2 + 3];
         int kiss_len = kiss_encode(buf, (size_t)enc_len, kiss_buf, sizeof(kiss_buf));
         if (kiss_len > 0) {
-                ssize_t wr = write(fd, kiss_buf, (size_t)kiss_len);
-                (void)wr;
+                ltp_paced_write(fd, kiss_buf, kiss_len);
             }
     }
 
