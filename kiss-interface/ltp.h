@@ -18,7 +18,7 @@
 #define LTP_MAX_IMPORT_SESSIONS  128
 #define LTP_MAX_BLOCK_SIZE       2048
 #define LTP_DEFAULT_SEGMENT_MTU  64
-#define LTP_DEFAULT_OWLT_MS      1500
+#define LTP_DEFAULT_OWLT_MS      30000
 #define LTP_DEFAULT_MAX_RETRIES  7
 #define LTP_MAX_CLAIMS           16   /* Max reception report claims */
 #define LTP_MAX_TIMERS           256  /* Max concurrent timers */

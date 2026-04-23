@@ -125,7 +125,7 @@ void print_usage(const char *prog)
     printf("  --local <eid>           Local DTN endpoint (required for ltp-send/ltp-recv)\n");
     printf("  --remote <eid>          Remote DTN endpoint (required for ltp-send)\n");
     printf("  --mtu <bytes>           LTP segment MTU (default: 64)\n");
-    printf("  --owlt <ms>             One-way light time estimate (default: 1500)\n");
+    printf("  --owlt <ms>             One-way light time estimate (default: 30000)\n");
     printf("  --retries <n>           Max retransmission attempts (default: 7)\n");
     printf("  --callsign <call>       Beacon source callsign (required for beacon)\n");
     printf("  --lat <degrees>         Beacon latitude in decimal degrees\n");
@@ -210,7 +210,7 @@ int parse_args(int argc, char *argv[], cli_args_t *args)
     args->local_eid  = NULL;
     args->remote_eid = NULL;
     args->mtu        = 64;
-    args->owlt_ms    = 1500;
+    args->owlt_ms    = 30000;
     args->retries    = 7;
     args->beacon_callsign = NULL;
     args->beacon_lat = 0.0;

@@ -688,8 +688,8 @@ static int test_parse_ltp_defaults(void)
         printf("\n    FAIL: mtu default = %d, expected 64\n", args.mtu);
         return 0;
     }
-    if (args.owlt_ms != 1500) {
-        printf("\n    FAIL: owlt_ms default = %d, expected 1500\n", args.owlt_ms);
+    if (args.owlt_ms != 30000) {
+        printf("\n    FAIL: owlt_ms default = %d, expected 30000\n", args.owlt_ms);
         return 0;
     }
     if (args.retries != 7) {
