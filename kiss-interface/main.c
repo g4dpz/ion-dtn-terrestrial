@@ -1385,6 +1385,14 @@ int cmd_bp_send(int fd, const char *local_eid, const char *remote_eid,
             fprintf(stderr, "error: fragment %d delivery failed\n", f);
             return -1;
         }
+
+        /* Inter-fragment cooldown: let the TNC3 USB recover between blocks.
+         * Without this, continuous TX causes EIO after ~7 fragments. */
+        if (f < nfrags - 1) {
+            if (verbose)
+                printf("  Cooldown 3s before next fragment...\n");
+            sleep(3);
+        }
     }
 
     struct timespec end;
