@@ -754,14 +754,34 @@ int ltp_segment_block(ltp_engine_t *eng, uint64_t remote_engine_id,
 /* ================================================================== */
 
 /*
- * ltp_paced_write — write a KISS frame and wait for RF TX to complete.
- * At 1200 baud, each byte takes ~8.3ms over the air.
- * Adds TX-delay(500ms) + TX-tail(300ms) + 700ms margin = 1500ms fixed.
- * Only paces on real serial ports (tty); pipes/files write immediately.
+ * ltp_paced_write — write an LTP segment wrapped in AX.25/KISS.
+ * If src_call and dst_call are set, wraps in AX.25 UI frame first.
+ * Paces on real serial ports (tty); writes immediately to pipes/files.
  */
-static int ltp_paced_write(int fd, const uint8_t *kiss_buf, int kiss_len)
+static int ltp_paced_write(int fd, const uint8_t *ltp_data, int ltp_len,
+                           const ltp_config_t *cfg)
 {
-    if (fd < 0 || kiss_len <= 0) return -1;
+    if (fd < 0 || ltp_len <= 0) return -1;
+
+    uint8_t frame_buf[LTP_MAX_SEGMENT_BUF + 20];
+    const uint8_t *to_kiss = ltp_data;
+    int to_kiss_len = ltp_len;
+
+    if (cfg && cfg->src_call[0] && cfg->dst_call[0]) {
+        int ax_len = ax25_build_frame(cfg->dst_call, cfg->src_call,
+                                      ltp_data, (size_t)ltp_len,
+                                      frame_buf, sizeof(frame_buf));
+        if (ax_len > 0) {
+            to_kiss = frame_buf;
+            to_kiss_len = ax_len;
+        }
+    }
+
+    uint8_t kiss_buf[(LTP_MAX_SEGMENT_BUF + 20) * 2 + 3];
+    int kiss_len = kiss_encode(to_kiss, (size_t)to_kiss_len,
+                               kiss_buf, sizeof(kiss_buf));
+    if (kiss_len < 0) return -1;
+
     ssize_t wr = write(fd, kiss_buf, (size_t)kiss_len);
     if (wr < 0) return -1;
     if (isatty(fd)) {
@@ -773,11 +793,12 @@ static int ltp_paced_write(int fd, const uint8_t *kiss_buf, int kiss_len)
 }
 
 /*
- * Callback context for ltp_send_block — writes KISS-encoded segments to fd.
+ * Callback context for ltp_send_block — writes segments to fd.
  */
 typedef struct {
     int fd;
     int error;
+    const ltp_config_t *cfg;
 } send_block_ctx_t;
 
 static void send_block_cb(const ltp_data_segment_t *seg, void *ctx)
@@ -789,12 +810,7 @@ static void send_block_cb(const ltp_data_segment_t *seg, void *ctx)
     int enc_len = ltp_encode_data_segment(seg, ltp_buf, sizeof(ltp_buf));
     if (enc_len < 0) { sctx->error = 1; return; }
 
-    uint8_t kiss_buf[LTP_MAX_SEGMENT_BUF * 2 + 3];
-    int kiss_len = kiss_encode(ltp_buf, (size_t)enc_len,
-                               kiss_buf, sizeof(kiss_buf));
-    if (kiss_len < 0) { sctx->error = 1; return; }
-
-    if (ltp_paced_write(sctx->fd, kiss_buf, kiss_len) < 0)
+    if (ltp_paced_write(sctx->fd, ltp_buf, enc_len, sctx->cfg) < 0)
         sctx->error = 1;
 }
 
@@ -810,6 +826,7 @@ int ltp_send_block(ltp_engine_t *eng, int fd,
     send_block_ctx_t sctx;
     sctx.fd = fd;
     sctx.error = 0;
+    sctx.cfg = &eng->config;
 
     int seg_count = ltp_segment_block(eng, remote_eid_id, data, len,
                                       send_block_cb, &sctx);
@@ -931,13 +948,8 @@ static int ltp_retransmit_missing(ltp_engine_t *eng, int fd,
             uint8_t ltp_buf[LTP_MAX_SEGMENT_BUF];
             int enc_len = ltp_encode_data_segment(&seg, ltp_buf, sizeof(ltp_buf));
             if (enc_len > 0 && fd >= 0) {
-                uint8_t kiss_buf[LTP_MAX_SEGMENT_BUF * 2 + 3];
-                int kiss_len = kiss_encode(ltp_buf, (size_t)enc_len,
-                                           kiss_buf, sizeof(kiss_buf));
-                if (kiss_len > 0) {
-                    ltp_paced_write(fd, kiss_buf, kiss_len);
+                if (ltp_paced_write(fd, ltp_buf, enc_len, &eng->config) == 0)
                     eng->segments_sent++;
-                }
             }
 
             off += chunk;
@@ -1069,13 +1081,8 @@ int ltp_process_segment(ltp_engine_t *eng, int fd,
             uint8_t rpt_buf[LTP_MAX_SEGMENT_BUF];
             int rpt_len = ltp_encode_report(&rpt, rpt_buf, sizeof(rpt_buf));
             if (rpt_len > 0 && fd >= 0) {
-                uint8_t kiss_buf[LTP_MAX_SEGMENT_BUF * 2 + 3];
-                int kiss_len = kiss_encode(rpt_buf, (size_t)rpt_len,
-                                           kiss_buf, sizeof(kiss_buf));
-                if (kiss_len > 0) {
-                    ltp_paced_write(fd, kiss_buf, kiss_len);
+                if (ltp_paced_write(fd, rpt_buf, rpt_len, &eng->config) == 0)
                     eng->segments_sent++;
-                }
             }
             /* Start report retransmission timer */
             ltp_start_timer(eng, 1, sess->engine_id,
@@ -1130,13 +1137,8 @@ int ltp_process_segment(ltp_engine_t *eng, int fd,
         uint8_t ack_buf[LTP_MAX_SEGMENT_BUF];
         int ack_len = ltp_encode_report_ack(&ack, ack_buf, sizeof(ack_buf));
         if (ack_len > 0 && fd >= 0) {
-            uint8_t kiss_buf[LTP_MAX_SEGMENT_BUF * 2 + 3];
-            int kiss_len = kiss_encode(ack_buf, (size_t)ack_len,
-                                       kiss_buf, sizeof(kiss_buf));
-            if (kiss_len > 0) {
-                ltp_paced_write(fd, kiss_buf, kiss_len);
+            if (ltp_paced_write(fd, ack_buf, ack_len, &eng->config) == 0)
                 eng->segments_sent++;
-            }
         }
 
         /* Cancel checkpoint retransmission timer */
@@ -1208,13 +1210,8 @@ int ltp_process_segment(ltp_engine_t *eng, int fd,
         uint8_t ack_buf[LTP_MAX_SEGMENT_BUF];
         int ack_len = ltp_encode_cancel(&ack, ack_buf, sizeof(ack_buf));
         if (ack_len > 0 && fd >= 0) {
-            uint8_t kiss_buf[LTP_MAX_SEGMENT_BUF * 2 + 3];
-            int kiss_len = kiss_encode(ack_buf, (size_t)ack_len,
-                                       kiss_buf, sizeof(kiss_buf));
-            if (kiss_len > 0) {
-                ltp_paced_write(fd, kiss_buf, kiss_len);
+            if (ltp_paced_write(fd, ack_buf, ack_len, &eng->config) == 0)
                 eng->segments_sent++;
-            }
         }
 
         /* Close import session if it exists */
@@ -1268,13 +1265,8 @@ int ltp_process_segment(ltp_engine_t *eng, int fd,
         uint8_t ack_buf[LTP_MAX_SEGMENT_BUF];
         int ack_len = ltp_encode_cancel(&ack, ack_buf, sizeof(ack_buf));
         if (ack_len > 0 && fd >= 0) {
-            uint8_t kiss_buf[LTP_MAX_SEGMENT_BUF * 2 + 3];
-            int kiss_len = kiss_encode(ack_buf, (size_t)ack_len,
-                                       kiss_buf, sizeof(kiss_buf));
-            if (kiss_len > 0) {
-                ltp_paced_write(fd, kiss_buf, kiss_len);
+            if (ltp_paced_write(fd, ack_buf, ack_len, &eng->config) == 0)
                 eng->segments_sent++;
-            }
         }
 
         /* Close export session if it exists */
@@ -1433,13 +1425,8 @@ int ltp_fire_expired_timers(ltp_engine_t *eng, int fd)
                 uint8_t ltp_buf[LTP_MAX_SEGMENT_BUF];
                 int enc_len = ltp_encode_data_segment(&seg, ltp_buf, sizeof(ltp_buf));
                 if (enc_len > 0 && fd >= 0) {
-                    uint8_t kiss_buf[LTP_MAX_SEGMENT_BUF * 2 + 3];
-                    int kiss_len = kiss_encode(ltp_buf, (size_t)enc_len,
-                                               kiss_buf, sizeof(kiss_buf));
-                    if (kiss_len > 0) {
-                        ltp_paced_write(fd, kiss_buf, kiss_len);
+                    if (ltp_paced_write(fd, ltp_buf, enc_len, &eng->config) == 0)
                         eng->segments_sent++;
-                    }
                 }
             }
         } else if (t->type == 1) {
@@ -1471,13 +1458,8 @@ int ltp_fire_expired_timers(ltp_engine_t *eng, int fd)
                 uint8_t rpt_buf[LTP_MAX_SEGMENT_BUF];
                 int rpt_len = ltp_encode_report(&rpt, rpt_buf, sizeof(rpt_buf));
                 if (rpt_len > 0 && fd >= 0) {
-                    uint8_t kiss_buf[LTP_MAX_SEGMENT_BUF * 2 + 3];
-                    int kiss_len = kiss_encode(rpt_buf, (size_t)rpt_len,
-                                               kiss_buf, sizeof(kiss_buf));
-                    if (kiss_len > 0) {
-                        ltp_paced_write(fd, kiss_buf, kiss_len);
+                    if (ltp_paced_write(fd, rpt_buf, rpt_len, &eng->config) == 0)
                         eng->segments_sent++;
-                    }
                 }
             }
         } else if (t->type == 2) {
@@ -1493,13 +1475,8 @@ int ltp_fire_expired_timers(ltp_engine_t *eng, int fd)
             uint8_t cancel_buf[LTP_MAX_SEGMENT_BUF];
             int cancel_len = ltp_encode_cancel(&cancel, cancel_buf, sizeof(cancel_buf));
             if (cancel_len > 0 && fd >= 0) {
-                uint8_t kiss_buf[LTP_MAX_SEGMENT_BUF * 2 + 3];
-                int kiss_len = kiss_encode(cancel_buf, (size_t)cancel_len,
-                                           kiss_buf, sizeof(kiss_buf));
-                if (kiss_len > 0) {
-                    ltp_paced_write(fd, kiss_buf, kiss_len);
+                if (ltp_paced_write(fd, cancel_buf, cancel_len, &eng->config) == 0)
                     eng->segments_sent++;
-                }
             }
         }
 
@@ -1567,22 +1544,19 @@ int ltp_engine_run(ltp_engine_t *eng, int fd, int send_mode)
                                            kiss_payload, sizeof(kiss_payload),
                                            &kiss_payload_len);
                 if (rc == 1) {
-                    if (aprs_is_ax25_frame(kiss_payload, kiss_payload_len)) {
-                        aprs_log_packet(kiss_payload, kiss_payload_len,
-                                        eng->config.verbose);
-                        /* Auto-register sender as DTN endpoint for reverse lookup.
-                         * Register both uppercase (from AX.25) and lowercase
-                         * variants since DJB2 hash is case-sensitive. */
-                        char asrc[16];
-                        int alen = ax25_strip_frame(kiss_payload, kiss_payload_len,
-                                                    asrc, NULL, NULL);
-                        if (alen >= 0 && asrc[0] != '\0') {
-                            /* Register as-is (uppercase from AX.25 decode) */
+                    /* Try to strip AX.25 header */
+                    char asrc[16] = {0};
+                    char adst[16] = {0};
+                    const uint8_t *info = NULL;
+                    int info_len = ax25_strip_frame(kiss_payload, kiss_payload_len,
+                                                    asrc, adst, &info);
+
+                    if (info_len > 0 && info != NULL) {
+                        /* Valid AX.25 frame — register sender endpoint */
+                        if (asrc[0] != '\0') {
                             char aeid[80];
                             snprintf(aeid, sizeof(aeid), "dtn://%s", asrc);
                             ltp_register_endpoint(eng, aeid);
-
-                            /* Also register lowercase variant */
                             char lower[80];
                             snprintf(lower, sizeof(lower), "dtn://%s", asrc);
                             for (int li = 6; lower[li]; li++) {
@@ -1590,8 +1564,6 @@ int ltp_engine_run(ltp_engine_t *eng, int fd, int send_mode)
                                     lower[li] += 32;
                             }
                             ltp_register_endpoint(eng, lower);
-
-                            /* Strip trailing "-0" and register that too */
                             size_t slen = strlen(asrc);
                             if (slen >= 2 && asrc[slen-2] == '-' && asrc[slen-1] == '0') {
                                 char trimmed[80];
@@ -1600,7 +1572,6 @@ int ltp_engine_run(ltp_engine_t *eng, int fd, int send_mode)
                                 memcpy(trimmed + 6, asrc, tlen);
                                 trimmed[6 + tlen] = '\0';
                                 ltp_register_endpoint(eng, trimmed);
-                                /* Lowercase trimmed */
                                 for (int li = 6; trimmed[li]; li++) {
                                     if (trimmed[li] >= 'A' && trimmed[li] <= 'Z')
                                         trimmed[li] += 32;
@@ -1608,7 +1579,22 @@ int ltp_engine_run(ltp_engine_t *eng, int fd, int send_mode)
                                 ltp_register_endpoint(eng, trimmed);
                             }
                         }
+
+                        /* Check if payload is APRS (starts with ! / = @) or LTP */
+                        uint8_t first = info[0];
+                        if (first == '!' || first == '/' || first == '=' || first == '@' ||
+                            first == '>' || first == ':' || first == ';' || first == ')' ||
+                            first == '`' || first == '\'' || first == '#' || first == '$' ||
+                            first == '%' || first == 'T' || first == '{') {
+                            /* APRS packet */
+                            aprs_log_packet(kiss_payload, kiss_payload_len,
+                                            eng->config.verbose);
+                        } else {
+                            /* LTP segment inside AX.25 */
+                            ltp_process_segment(eng, fd, info, (size_t)info_len);
+                        }
                     } else {
+                        /* Not AX.25 — try as raw LTP */
                         ltp_process_segment(eng, fd, kiss_payload, kiss_payload_len);
                     }
                 }
@@ -1663,11 +1649,7 @@ int ltp_cancel_session(ltp_engine_t *eng, int fd,
     uint8_t buf[LTP_MAX_SEGMENT_BUF];
     int enc_len = ltp_encode_cancel(&cancel, buf, sizeof(buf));
     if (enc_len > 0 && fd >= 0) {
-        uint8_t kiss_buf[LTP_MAX_SEGMENT_BUF * 2 + 3];
-        int kiss_len = kiss_encode(buf, (size_t)enc_len, kiss_buf, sizeof(kiss_buf));
-        if (kiss_len > 0) {
-                ltp_paced_write(fd, kiss_buf, kiss_len);
-            }
+        ltp_paced_write(fd, buf, enc_len, &eng->config);
     }
 
     /* Start cancel retransmission timer */

@@ -1,0 +1,401 @@
+commit 483ee1df48a174403a49d7d1b4718758f857ef29
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 23 10:39:20 2026 +0100
+
+    More timing changes
+
+commit 08a21e7376fe198ed06e5746425d52bcec1c5114
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 23 10:30:12 2026 +0100
+
+    Changes to pacing
+
+commit e7e67bc56fddd6cdd761b55cacef536b74c6e9dc
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Wed Apr 22 21:52:01 2026 +0100
+
+    Updated serial handling
+
+commit 77e2424c34816349195acfd6b41ed3fdef8b34d5
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Wed Apr 22 17:21:57 2026 +0100
+
+    Fix serial port config: use cfmakeraw to match kiss_interface
+
+commit 0870c90b90cf33e1c4b35d2c6c1e7e7d4ea6d634
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Wed Apr 22 16:57:47 2026 +0100
+
+    Fix ionserialcla TX pacing and add APRS beacon support
+
+commit d795a1f14ed9ebd85b03a4bdfd97683026e6a672
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Wed Apr 22 16:49:33 2026 +0100
+
+    Problems with serial port
+
+commit cd2b1073159e7db6561e82c5ae33022d19383855
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Wed Apr 22 15:32:49 2026 +0100
+
+    changes to ltprc for node A
+
+commit 51f4352a19085b900366afe0ad037d8e9d0ad808
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Sun Apr 19 17:40:00 2026 +0100
+
+    We now kill all processes before starting ION
+
+commit 3d612d16cde23f55c66a712cae9cd2fa18a2ae1e
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Sun Apr 19 16:37:49 2026 +0100
+
+    Added cla build script opt/ion-demo/scripts/build-cla.sh
+
+commit 18466129a7aad9e066e22b5226a0415505913b25
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Sun Apr 19 16:07:21 2026 +0100
+
+    Changed startup scripts
+
+commit 0d90148d3461281e8eca1ad736b81e44bb2bd02a
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Sat Apr 18 23:09:20 2026 +0100
+
+    B200 aprs-receive
+
+commit 93375677676d76952a9618b01f7f2894f56e2087
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Sat Apr 18 23:07:02 2026 +0100
+
+    Added a README describing the use of the callsigns within the new CLA
+
+commit 5f8183b3aca0cc45c1c7a2315da17a19e76c06b4
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Sat Apr 18 18:52:36 2026 +0100
+
+    Setting up node b
+
+commit c0f9b2ac5c13c9365a3d0156f91dfa8b2401ce11
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Sat Apr 18 18:18:32 2026 +0100
+
+    B200 RX Attempt
+
+commit 6f81958290dcb4b440b4b9e342791747080c07e7
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Sat Apr 18 16:16:26 2026 +0100
+
+    B200 APRS receive working
+
+commit 580280a7eafa43838c3c643e038594a1609ce392
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Sat Apr 18 15:11:35 2026 +0100
+
+    B200 APRS modulation working
+
+commit 5f18898214b6b70f9fc1407f260560541ddb986b
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Sat Apr 18 09:16:48 2026 +0100
+
+    Updated the roadmap
+
+commit 8a5aef08f06a1f0a346c13682f4569ef084bf212
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Sat Apr 18 08:42:54 2026 +0100
+
+    Added wireshark dissector
+
+commit 82674edf9c0cc716f4a1c026dcfd0824c5103b88
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Fri Apr 17 16:04:16 2026 +0100
+
+    Hiding the IDE source
+
+commit 22dbfbb45b4ab570be8374343e4a8bc785a1d1cd
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Fri Apr 17 15:09:31 2026 +0100
+
+    Fixed timesatmps
+
+commit 2e0d94bc1c944bc674bc5a22fcb10e3ab0c55e83
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Fri Apr 17 14:55:36 2026 +0100
+
+    Changed the LTP max blocksize
+
+commit 6dafab7920c5f6909dcdb3c68caa837bbf5325c5
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Fri Apr 17 14:50:16 2026 +0100
+
+    Fixed LTP sequencing
+
+commit b1ba75cba5da667450ec632e7f8bd51b27db2fc9
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Fri Apr 17 14:37:52 2026 +0100
+
+    Implemented BP fragmentation
+
+commit 242375891c49375616fd58e63a256e04a1f68134
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 16 23:02:27 2026 +0100
+
+    Fixed case of the dtn callsign
+
+commit 059fc21f169543a212baff8374b1f55aaaa046ab
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 16 22:58:01 2026 +0100
+
+    We now decode the dtn://.....
+
+commit 89f69b3dc010a62a6c6026181303b25d40ba9ce6
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 16 22:46:45 2026 +0100
+
+    Removed executables from repo
+
+commit b34a841ad155338149f68b4b1ea37f06901dacf1
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 16 22:42:09 2026 +0100
+
+    Better APRS RX handling
+
+commit e9f93aec7552cf57f019270c3ccf1db91d87a0f8
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 16 22:27:58 2026 +0100
+
+    Added APRS decode
+
+commit 4c89b8eae04bf0fb346969f6361710865a4e08c4
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 16 17:43:28 2026 +0100
+
+    Added APACHE 2.0 license
+
+commit 43e0d17eb1822cea999a036aea4d124fe00e3d05
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 16 17:37:05 2026 +0100
+
+    Added README in the root
+
+commit e02ba76bea8fc70fbed05565fb3dd97d0ffd8710
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 16 17:32:46 2026 +0100
+
+    Updated CI/CD to suppress a warning
+
+commit d115eae8650ced084eb8a7f9531f6167b94b5f03
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 16 17:29:28 2026 +0100
+
+    Added CI/CD yaml
+
+commit 2457611ce587e9df2e093fb6d44ba009f0dad015
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 16 17:20:42 2026 +0100
+
+    Implemented LTP
+
+commit 18681771cfc1427e8a80db0240717eb00c30c98f
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 16 15:18:28 2026 +0100
+
+    Removed built executables from repo
+
+commit 9c3e689a8ff71f7d55c5239d2986eb939233c549
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 16 15:14:30 2026 +0100
+
+    Implemented ping
+
+commit bae4cf540265fbe9ee14c20f2ecae7971b9b2357
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 16 13:19:03 2026 +0100
+
+    Added KISS-AX.25 stand alone test
+
+commit e15c6e03a3f796f5ee4f279163cb7768485e1182
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Sat Apr 4 17:14:49 2026 +0100
+
+    Changed the agregation from 512 to 256
+
+commit abaa8a857e624defa3cedb471790eb13e94e09b5
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Sat Apr 4 09:05:57 2026 +0100
+
+    Second cleanup
+
+commit c48ee0f3673a1c25c3ef4a0fb3014c64062130d6
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Sat Apr 4 08:49:44 2026 +0100
+
+    Cleanup
+
+commit ca1315545885da75d15d4b9ffa135bf1a4afee44
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Fri Apr 3 17:09:50 2026 +0100
+
+    Reset to 64
+
+commit 724518b88fda738909cc18548f34145a92af5f77
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Fri Apr 3 17:05:59 2026 +0100
+
+    Changed back t0 60
+
+commit 92e947c2b757fea7af5913acb182797dd21ac7f4
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Fri Apr 3 16:55:49 2026 +0100
+
+    Changed to 72
+
+commit 0b99628f72450ff003e5dfc01debde6dcdd719e9
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Fri Apr 3 16:51:09 2026 +0100
+
+    Upped the packet size from 64 to 80
+
+commit b7127c172c3c35255b1c85a7a295edbd39f33104
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Fri Apr 3 16:16:53 2026 +0100
+
+    More frame size modifications
+
+commit 7e953c5f17feeb47839f1772facd76b712673ae9
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Fri Apr 3 15:40:26 2026 +0100
+
+    Change block size again
+
+commit c362726669894314bd8afdeb5c82fa1013935f7b
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Fri Apr 3 15:24:52 2026 +0100
+
+    anged block size again
+
+commit c4189597f6213fa0b8374dca9f6c48fe71014344
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Fri Apr 3 15:16:01 2026 +0100
+
+    Fixed the delay calculation
+
+commit 4f33113338b6f9f6a67c45ada025ac627ae8d18b
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Fri Apr 3 15:08:23 2026 +0100
+
+    Changed block size
+
+commit 633101cc0f3413e8ab87fe36847f5738574b08b1
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Fri Apr 3 14:55:03 2026 +0100
+
+    Fixed for 1200 baud transmit rate
+
+commit 7cc1399dc14d4c262f108c4b5af2834733bd2ae3
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Fri Apr 3 14:46:32 2026 +0100
+
+    Made frame sent smaller
+
+commit 3cd1417f395e294a37fd515ac6b370da22e57263
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Fri Apr 3 14:34:39 2026 +0100
+
+    Added debugging
+
+commit 80ad922f2b4ded21cd642d167709cc79a1bac922
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Fri Apr 3 14:10:08 2026 +0100
+
+    Updated config to allow TX / RX problem
+
+commit 3371d05646aae0523e192f438726b14cfa23593e
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 2 18:29:35 2026 +0100
+
+    Integerated implementation
+
+commit e6d629104e835ce49c6af55a34227df1010657ba
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 2 16:14:32 2026 +0100
+
+    Changed OIN timing to matc 1200 baud
+
+commit 1965af8af7992380954ef4b2943c086062e7be93
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 2 15:54:39 2026 +0100
+
+    Changed delays in config
+
+commit a763ce754bc27af0ef143cd851e8c000e30d6270
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 2 15:48:10 2026 +0100
+
+    Changes to serialcla.c
+
+commit 1b97ff367102b7e16c2d624bea56e8126890fcc7
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 2 15:41:09 2026 +0100
+
+    Fixed compier warning
+
+commit c7650ed3df79c79de717809b067036b49639f086
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 2 15:38:19 2026 +0100
+
+    Reverted to no threaded version
+
+commit be16a5412d90f634531363df0fa9686640f2c31b
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 2 15:30:02 2026 +0100
+
+    Changed contact plan data rate
+
+commit fd66ec7ed69a2a0757190afa3645489d8c9a104e
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 2 15:24:46 2026 +0100
+
+    Updated config files
+
+commit 157a2e561d7c02499bdd233de83fc824c212ab67
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 2 15:20:07 2026 +0100
+
+    CLA is now multi-threaded
+
+commit 31e50dab6a0c3b87c67bd429a52e3e54cee9b1ed
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 2 15:06:34 2026 +0100
+
+    Testing Lunar delay
+
+commit 70e708a953100ecc7f7bae2f7f233ad92f03da25
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 2 14:32:50 2026 +0100
+
+    CLA is now dumb
+
+commit ae1122fa245a71b0f700d0383ffbddb2edc6489a
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 2 13:02:33 2026 +0100
+
+    Fixed UART handling
+
+commit 2da6cdc8072431f284a70709033b48f8d2451a77
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 2 12:38:50 2026 +0100
+
+    Changed the pacing
+
+commit 6d6fc108e25b7f720eb7e7319c43d5a1aa5e5cbf
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Thu Apr 2 11:56:15 2026 +0100
+
+    Added a pause in transmission for the handshake to kae place
+
+commit bfac851458b5c7ee62b8079871076991c4c21bcc
+Author: David Johnson <dave@g4dpz.me.uk>
+Date:   Wed Apr 1 15:24:15 2026 +0100
+
+    Initial commit

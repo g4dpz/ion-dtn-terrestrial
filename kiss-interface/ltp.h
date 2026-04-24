@@ -149,6 +149,8 @@ typedef struct {
     uint32_t max_retries;       /* Max retransmission attempts */
     uint32_t max_block_size;    /* Max block size */
     int      verbose;
+    char     src_call[16];      /* AX.25 source callsign (e.g. "G4DPZ-1") */
+    char     dst_call[16];      /* AX.25 destination callsign */
 } ltp_config_t;
 
 /* ---- LTP Engine ---- */

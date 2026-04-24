@@ -1017,14 +1017,18 @@ int cmd_ping(int fd, const char *src, const char *dst,
 /* Requirements: 10.3, 10.4, 10.5, 10.6                               */
 /* ------------------------------------------------------------------ */
 int cmd_ltp_send(int fd, const char *local_eid, const char *remote_eid,
-                 const char *payload, int mtu, int owlt_ms, int retries, int verbose)
+                 const char *payload, int mtu, int owlt_ms, int retries, int verbose,
+                 const char *src_call, const char *dst_call)
 {
     ltp_config_t cfg;
+    memset(&cfg, 0, sizeof(cfg));
     cfg.segment_mtu = (uint32_t)mtu;
     cfg.owlt_ms = (uint32_t)owlt_ms;
     cfg.max_retries = (uint32_t)retries;
     cfg.max_block_size = LTP_MAX_BLOCK_SIZE;
     cfg.verbose = verbose;
+    if (src_call) strncpy(cfg.src_call, src_call, sizeof(cfg.src_call) - 1);
+    if (dst_call) strncpy(cfg.dst_call, dst_call, sizeof(cfg.dst_call) - 1);
 
     ltp_engine_t eng;
     if (ltp_engine_init(&eng, local_eid, &cfg) != 0) {
@@ -1103,6 +1107,7 @@ int cmd_ltp_recv(int fd, const char *local_eid,
     /* Note: beacon integration handled by caller checking beacon_enabled
      * and running a custom event loop. This function is the non-beacon path. */
     ltp_config_t cfg;
+    memset(&cfg, 0, sizeof(cfg));
     cfg.segment_mtu = (uint32_t)mtu;
     cfg.owlt_ms = (uint32_t)owlt_ms;
     cfg.max_retries = (uint32_t)retries;
@@ -1306,6 +1311,7 @@ int cmd_bp_send(int fd, const char *local_eid, const char *remote_eid,
                                lifetime_ms, bp_seq, bundle_buf, sizeof(bundle_buf));
 
     ltp_config_t cfg;
+    memset(&cfg, 0, sizeof(cfg));
     cfg.segment_mtu = (uint32_t)mtu;
     cfg.owlt_ms = (uint32_t)owlt_ms;
     cfg.max_retries = (uint32_t)retries;
@@ -1709,11 +1715,14 @@ int main(int argc, char *argv[])
 
             /* Custom send with beacon-aware event loop */
             ltp_config_t scfg;
+            memset(&scfg, 0, sizeof(scfg));
             scfg.segment_mtu = (uint32_t)args.mtu;
             scfg.owlt_ms = (uint32_t)args.owlt_ms;
             scfg.max_retries = (uint32_t)args.retries;
             scfg.max_block_size = LTP_MAX_BLOCK_SIZE;
             scfg.verbose = args.verbose;
+            if (args.src_call) strncpy(scfg.src_call, args.src_call, sizeof(scfg.src_call) - 1);
+            if (args.dst_call) strncpy(scfg.dst_call, args.dst_call, sizeof(scfg.dst_call) - 1);
 
             ltp_engine_t seng;
             if (ltp_engine_init(&seng, args.local_eid, &scfg) != 0) {
@@ -1803,18 +1812,22 @@ int main(int argc, char *argv[])
         } else {
             rc = cmd_ltp_send(fd, args.local_eid, args.remote_eid,
                               args.payload, args.mtu, args.owlt_ms,
-                              args.retries, args.verbose);
+                              args.retries, args.verbose,
+                              args.src_call, args.dst_call);
         }
         break;
     case CMD_MODE_LTP_RECV:
         if (args.beacon_enabled) {
             /* LTP recv with beacon integration */
             ltp_config_t lcfg;
+            memset(&lcfg, 0, sizeof(lcfg));
             lcfg.segment_mtu = (uint32_t)args.mtu;
             lcfg.owlt_ms = (uint32_t)args.owlt_ms;
             lcfg.max_retries = (uint32_t)args.retries;
             lcfg.max_block_size = LTP_MAX_BLOCK_SIZE;
             lcfg.verbose = args.verbose;
+            if (args.src_call) strncpy(lcfg.src_call, args.src_call, sizeof(lcfg.src_call) - 1);
+            if (args.dst_call) strncpy(lcfg.dst_call, args.dst_call, sizeof(lcfg.dst_call) - 1);
 
             ltp_engine_t eng;
             if (ltp_engine_init(&eng, args.local_eid, &lcfg) != 0) {
@@ -1963,11 +1976,14 @@ int main(int argc, char *argv[])
     case CMD_MODE_BP_RECV:
         {
             ltp_config_t bpcfg;
+            memset(&bpcfg, 0, sizeof(bpcfg));
             bpcfg.segment_mtu = (uint32_t)args.mtu;
             bpcfg.owlt_ms = (uint32_t)args.owlt_ms;
             bpcfg.max_retries = (uint32_t)args.retries;
             bpcfg.max_block_size = LTP_MAX_BLOCK_SIZE;
             bpcfg.verbose = args.verbose;
+            if (args.src_call) strncpy(bpcfg.src_call, args.src_call, sizeof(bpcfg.src_call) - 1);
+            if (args.dst_call) strncpy(bpcfg.dst_call, args.dst_call, sizeof(bpcfg.dst_call) - 1);
 
             ltp_engine_t bpeng;
             ltp_engine_init(&bpeng, args.local_eid, &bpcfg);
