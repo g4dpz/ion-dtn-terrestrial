@@ -155,22 +155,16 @@ static int kiss_send(int fd, const uint8_t *data, size_t len) {
     dbg("[DBG] kiss_send: KISS frame %zu bytes", idx);
     dbg_hex("kiss_send KISS frame", frame, idx);
     size_t w=0;
-    int retries = 0;
     while(w<idx){
         ssize_t n=write(fd,frame+w,idx-w);
         if(n<0){
             if(errno==EINTR)continue;
             if(errno==EAGAIN||errno==EWOULDBLOCK){usleep(10000);continue;}
-            if(errno==EIO && retries < 10){
-                retries++;
-                dbg("[DBG] kiss_send: EIO on write, retry %d/10 after 500ms", retries);
-                usleep(500000);
-                continue;
-            }
+            /* EIO = USB device disconnected. Fail immediately so caller
+             * can close/reopen. Retrying a dead fd wastes time. */
             dbg("[DBG] kiss_send: write error errno=%d (%s)", errno, strerror(errno));
             return -1;
         }
-        retries = 0;
         dbg("[DBG] kiss_send: wrote %zd bytes (total %zu/%zu)", n, w+n, idx);
         w+=n;
     }
@@ -178,20 +172,21 @@ static int kiss_send(int fd, const uint8_t *data, size_t len) {
     int drain_rc = tcdrain(fd);
     if (drain_rc < 0) {
         dbg("[DBG] kiss_send: tcdrain failed errno=%d (%s)", errno, strerror(errno));
+        return -1;
     }
     dbg("[DBG] kiss_send: tcdrain returned %d", drain_rc);
 
     /* Post-transmit delay: wait for TNC to finish RF transmission.
      * At 1200 baud, each byte takes ~8.3ms over the air.
-     * Add TX-tail time (300ms default) for PTT release. */
+     * Add TX-delay(500ms) + TX-tail(300ms) + 700ms margin = 1500ms fixed.
+     * This matches the proven pacing from the standalone LTP stack. */
     {
         int rf_baud = 1200;
         const char *rfenv = getenv("ION_SERIAL_RF_BAUD");
         if (rfenv) rf_baud = atoi(rfenv);
         if (rf_baud <= 0) rf_baud = 1200;
         int us_per_byte = (10 * 1000000) / rf_baud;
-        /* Total delay: RF TX time + TX-delay (500ms) + TX-tail (300ms) + margin */
-        int delay_us = (int)idx * us_per_byte + 1000000;
+        int delay_us = (int)idx * us_per_byte + 1500000;
         dbg("[DBG] kiss_send: post-TX delay %d ms", delay_us / 1000);
         usleep((useconds_t)delay_us);
     }
@@ -514,7 +509,7 @@ int main(int argc, char *argv[]) {
             pthread_mutex_unlock(&rtp.fd_lock);
 
             close(serial_fd);
-            usleep(2000000);  /* Wait 2s for TNC to recover */
+            usleep(3000000);  /* Wait 3s for TNC USB to fully recover */
             serial_fd = open_serial(device, baud);
             if (serial_fd < 0) {
                 writeMemo("[!] ionserialcla: cannot reopen serial port, exiting");
@@ -525,6 +520,7 @@ int main(int argc, char *argv[]) {
                 rtp.serial_fd = serial_fd;
                 pthread_mutex_unlock(&rtp.fd_lock);
                 writeMemo("[i] ionserialcla: serial port reopened successfully");
+                usleep(1000000);  /* Extra 1s settle time after reopen */
             }
             continue;
         }
