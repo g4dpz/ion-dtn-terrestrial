@@ -538,14 +538,22 @@ int main(int argc, char *argv[]) {
 
         sm_TaskYield();
 
-        /* Check if APRS beacon is due */
+        /* Check if APRS beacon is due — but not immediately after a TX.
+         * The pacing delay after kiss_send already ran, so the TNC should
+         * be idle. Use kiss_send for proper pacing instead of raw write. */
         if (beacon_enabled) {
             struct timespec now;
             clock_gettime(CLOCK_MONOTONIC, &now);
             int elapsed = (int)(now.tv_sec - beacon_last.tv_sec);
             if (elapsed >= beacon_interval) {
+                /* Build AX.25 beacon frame fresh (reuse pre-built KISS) */
                 ssize_t bw = write(serial_fd, beacon_kiss, (size_t)beacon_kiss_len);
-                if (bw > 0) tcdrain(serial_fd);
+                if (bw > 0) {
+                    tcdrain(serial_fd);
+                    /* Pacing delay for beacon frame — same formula as kiss_send */
+                    int bcn_rf_us = beacon_kiss_len * 8333 + 1500000;
+                    usleep((useconds_t)bcn_rf_us);
+                }
                 beacon_last = now;
                 char msg[128];
                 isprintf(msg, sizeof(msg),
